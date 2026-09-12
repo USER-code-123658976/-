@@ -1,0 +1,2257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="supabase.js"></script>
+    <title>小森林</title>
+  <style>
+    /* ============ 全局样式 ============ */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Microsoft YaHei", sans-serif;
+      height: 100vh; overflow: hidden; color: #000;
+    }
+
+    /* ============ 全屏应用容器 ============ */
+    .app { display: flex; height: 100vh; width: 100vw; position: relative; }
+
+    /* ============ 侧边栏 ============ */
+    .sidebar {
+      position: fixed; top: 0; left: 0; width: 280px; height: 100vh;
+      background: rgba(255,255,255,0.25); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border-right: 1px solid rgba(255,255,255,0.4); box-shadow: 2px 0 20px rgba(0,0,0,0.1);
+      transform: translateX(-100%); transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+      z-index: 100; display: flex; flex-direction: column; padding: 20px 16px; overflow-y: auto;
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-header { font-size: 18px; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; color: #000; flex-shrink: 0; }
+    .sidebar-close { background: none; border: none; font-size: 22px; cursor: pointer; color: #000; opacity: 0.6; transition: opacity 0.2s; line-height: 1; }
+    .sidebar-close:hover { opacity: 1; }
+    .menu-item { padding: 12px 14px; margin-bottom: 4px; border-radius: 12px; cursor: pointer; transition: background 0.2s; font-size: 15px; color: #000; user-select: none; flex-shrink: 0; }
+    .menu-item:hover { background: rgba(255,255,255,0.4); }
+    .history-panel { display: none; flex-direction: column; margin-bottom: 8px; flex-shrink: 0; }
+    .history-panel.open { display: flex; }
+    .history-list { max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding: 4px 4px 4px 0; scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.2) transparent; }
+    .history-list::-webkit-scrollbar { width: 4px; }
+    .history-list::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 2px; }
+    .history-item { padding: 10px 14px; border-radius: 10px; cursor: pointer; font-size: 14px; transition: background 0.15s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; user-select: none; }
+    .history-item:hover { background: rgba(255,255,255,0.35); }
+    .history-item.active { background: rgba(255,255,255,0.5); font-weight: 500; }
+    .sidebar-footer { margin-top: auto; font-size: 12px; opacity: 0.5; text-align: center; padding-top: 20px; color: #000; flex-shrink: 0; }
+
+    /* ============ 聊天主区域 ============ */
+    .chat-area { flex: 1; display: flex; flex-direction: column; height: 100vh; width: 100%; position: relative; background: transparent; }
+    .chat-background { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; background-size: cover; background-position: center; background: linear-gradient(135deg, #a8c0ff 0%, #fbc2eb 50%, #f6d5f7 100%); filter: blur(0px); opacity: 1; transition: filter 0.2s, opacity 0.2s; }
+    .chat-header, .messages, .input-area, .tray { position: relative; z-index: 1; }
+    .chat-header { display: flex; align-items: center; padding: 14px 18px; border-bottom: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); flex-shrink: 0; }
+    .menu-toggle { background: none; border: none; cursor: pointer; padding: 8px; border-radius: 10px; display: flex; flex-direction: column; justify-content: center; gap: 5px; transition: background 0.2s; flex-shrink: 0; }
+    .menu-toggle:hover { background: rgba(255,255,255,0.3); }
+    .menu-toggle .bar { display: block; width: 22px; height: 2px; background: #000; border-radius: 2px; transition: transform 0.3s, opacity 0.3s; }
+    .menu-toggle.active .bar:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+    .menu-toggle.active .bar:nth-child(2) { opacity: 0; }
+    .menu-toggle.active .bar:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+    .chat-title { margin-left: 14px; font-size: 22px; font-weight: 700; color: #000; letter-spacing: 2px; flex-shrink: 0; }
+    .new-chat-btn { margin-left: auto; background: none; border: none; cursor: pointer; font-size: 20px; color: #000; padding: 8px 12px; border-radius: 10px; transition: background 0.2s; letter-spacing: 1px; flex-shrink: 0; }
+    .new-chat-btn:hover { background: rgba(255,255,255,0.3); }
+    .new-chat-btn:active { transform: scale(0.95); }
+    .messages { flex: 1; overflow-y: auto; padding: 24px 20px 80px 20px; display: flex; flex-direction: column; gap: 20px; scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.2) transparent; }
+    .messages::-webkit-scrollbar { width: 6px; }
+    .messages::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 3px; }
+    .message-row { display: flex; gap: 10px; align-items: flex-start; animation: fadeInUp 0.25s ease; position: relative; }
+    .message-row.user { flex-direction: row-reverse; }
+    .message-row.assistant { flex-direction: row; }
+    .avatar { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); user-select: none; overflow: hidden; }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+    .user-avatar { background: linear-gradient(135deg, #ffd89b 0%, #f7b733 100%); }
+    .assistant-avatar { background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%); }
+    .message-content { display: flex; flex-direction: column; gap: 4px; max-width: 70%; }
+    .message-row.user .message-content { align-items: flex-end; }
+    .message-row.assistant .message-content { align-items: flex-start; }
+    .message-meta { font-size: 11px; color: rgba(0,0,0,0.45); user-select: none; padding: 0 4px; }
+    .bubble { background: #ffffff; color: #000; padding: 12px 16px; border-radius: 18px; line-height: 1.5; font-size: 15px; word-break: break-word; white-space: pre-wrap; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .message-row.user .bubble { border-bottom-right-radius: 4px; }
+    .message-row.assistant .bubble { border-bottom-left-radius: 4px; }
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    .input-area { position: absolute; bottom: 0; left: 0; right: 0; display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-top: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); z-index: 10; transition: bottom 0.3s cubic-bezier(0.4,0,0.2,1); }
+    .plus-btn { background: none; border: none; cursor: pointer; font-size: 24px; color: #000; padding: 0 6px; border-radius: 50%; transition: background 0.2s, transform 0.2s; flex-shrink: 0; line-height: 1; }
+    .plus-btn:hover { background: rgba(255,255,255,0.3); }
+    .plus-btn:active { transform: scale(0.9); }
+    .input-area input { flex: 1; padding: 12px 16px; border: 1px solid rgba(255,255,255,0.5); border-radius: 24px; outline: none; font-size: 15px; background: rgba(255,255,255,0.7); color: #000; transition: border 0.2s, background 0.2s; }
+    .input-area input::placeholder { color: rgba(0,0,0,0.4); }
+    .input-area input:focus { border-color: #fff; background: rgba(255,255,255,0.9); }
+    .input-area button[type="button"] { padding: 12px 20px; border: none; border-radius: 24px; background: #ffffff; color: #000; font-size: 15px; font-weight: 500; cursor: pointer; transition: background 0.2s, transform 0.1s; box-shadow: 0 2px 8px rgba(0,0,0,0.06); flex-shrink: 0; }
+    .input-area button[type="button"]:hover { background: #f0f0f0; }
+    .input-area button[type="button"]:active { transform: scale(0.96); }
+    .input-area button[type="button"]:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tray { position: absolute; bottom: 0; left: 0; right: 0; height: 200px; background: rgba(255,255,255,0.2); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border-top: 1px solid rgba(255,255,255,0.4); transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.4,0,0.2,1); z-index: 5; }
+    .chat-area.tray-open .input-area { bottom: 200px; }
+    .chat-area.tray-open .tray { transform: translateY(0); }
+
+    /* ============ 助手设置页面 ============ */
+    .assistant-page { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #fff8e7; z-index: 200; display: none; flex-direction: column; padding: 20px; overflow-y: auto; }
+    .assistant-page.visible { display: flex; }
+    .assistant-topbar { display: flex; align-items: center; flex-shrink: 0; }
+    .back-btn { background: none; border: none; cursor: pointer; font-size: 20px; font-weight: 400; font-style: italic; font-family: "Times New Roman", Georgia, serif; color: #000; padding: 8px 12px; border-radius: 8px; transition: background 0.2s; }
+    .back-btn:hover { background: rgba(0,0,0,0.05); }
+    .assistant-content { flex: 1; display: flex; flex-direction: column; align-items: center; padding-top: 20px; max-width: 500px; margin: 0 auto; width: 100%; gap: 25px; }
+    .name-input { font-size: 22px; font-weight: 700; text-align: center; border: none; background: transparent; outline: none; color: #000; width: 100%; cursor: text; }
+    .name-input::placeholder { color: #888; }
+    .avatar-uploader { width: 100px; height: 100px; border-radius: 50%; background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%); display: flex; align-items: center; justify-content: center; font-size: 30px; color: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.1); cursor: pointer; transition: opacity 0.2s; overflow: hidden; user-select: none; position: relative; }
+    .avatar-uploader:hover { opacity: 0.85; }
+    .avatar-uploader img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+    .hidden-file-input { display: none; }
+    .field-group { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+    .field-group label { font-size: 15px; font-weight: 400; font-style: italic; font-family: "Times New Roman", "Georgia", serif; letter-spacing: 0.5px; color: #000; }
+    .field-group textarea { width: 100%; height: 100px; padding: 12px; border: 1px solid #ccc; border-radius: 12px; font-size: 14px; resize: vertical; outline: none; color: #000; background: transparent; transition: border 0.2s; }
+    .field-group textarea:focus { border-color: #999; }
+    .save-btn-container { display: flex; justify-content: flex-end; }
+    .save-btn { background: #000; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 14px; cursor: pointer; transition: background 0.2s; display: none; }
+    .save-btn:hover { background: #333; }
+    .save-btn.visible { display: inline-block; }
+
+    .likes-list { width: 100%; display: flex; flex-direction: column; gap: 6px; }
+    .like-item { display: flex; align-items: center; justify-content: space-between; background: transparent; border: 1px solid #ddd; padding: 8px 12px; border-radius: 8px; font-size: 14px; }
+    .like-item .like-text { flex: 1; word-break: break-word; }
+    .like-item .delete-like-btn { background: #ffffff; color: #333; border: 1px solid #ddd; cursor: pointer; font-size: 12px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 4px; margin-left: 8px; transition: background 0.2s; }
+    .like-item .delete-like-btn:hover { background: #f0f0f0; }
+    .add-like-row { display: flex; gap: 8px; margin-top: 4px; }
+    .add-like-row input { flex: 1; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; outline: none; background: transparent; color: #000; }
+    .add-like-row input:focus { border-color: #999; }
+    .add-like-row button { padding: 10px 16px; background: #000; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
+    .add-like-row button:hover { background: #333; }
+    .section-divider { width: 100%; border: none; border-top: 2px dashed #ccc; margin: 10px 0 5px 0; }
+    .section-title { font-size: 18px; font-weight: 700; color: #000; align-self: flex-start; }
+
+    /* ============ API 设置页面 ============ */
+    .api-page { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #fff8e7; z-index: 200; display: none; flex-direction: column; padding: 20px; overflow-y: auto; }
+    .api-page.visible { display: flex; }
+    .api-topbar { display: flex; align-items: center; flex-shrink: 0; }
+    .api-content { flex: 1; display: flex; flex-direction: column; max-width: 600px; margin: 0 auto; width: 100%; gap: 30px; padding-top: 20px; }
+    .api-section { display: flex; flex-direction: column; gap: 16px; }
+    .api-section .section-title { font-size: 20px; font-weight: 700; color: #000; border-bottom: 1px solid #ddd; padding-bottom: 8px; }
+    .api-section input[type="text"], .api-section input[type="password"] { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; outline: none; background: transparent; color: #000; }
+    .api-section input:focus { border-color: #999; }
+    .model-selection { display: flex; gap: 8px; align-items: center; }
+    .model-selection input { flex: 1; }
+    .model-selection button { padding: 10px 16px; background: #000; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; white-space: nowrap; transition: background 0.2s; display: none; }
+    .model-selection button:hover { background: #333; }
+    .model-list { display: none; flex-direction: column; gap: 4px; max-height: 150px; overflow-y: auto; border: 1px solid #ccc; border-radius: 8px; padding: 6px; background: rgba(255,255,255,0.5); }
+    .model-list.visible { display: flex; }
+    .model-list-item { padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
+    .model-list-item:hover { background: rgba(0,0,0,0.05); }
+    .test-area { display: flex; flex-direction: column; gap: 8px; }
+    .progress-bar { width: 200px; max-width: 80%; height: 12px; border-radius: 6px; background: #ddd; transition: background 0.3s; }
+    .progress-bar.green { background: #4caf50; animation: pulseGreen 1s infinite; }
+    .progress-bar.red { background: #f44336; }
+    @keyframes pulseGreen { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+    .test-message { font-size: 13px; color: #555; min-height: 18px; }
+    .scheme-list { display: flex; flex-direction: column; gap: 6px; }
+    .scheme-item { display: flex; align-items: center; justify-content: space-between; background: transparent; border: 1px solid #ddd; padding: 8px 12px; border-radius: 8px; font-size: 14px; cursor: pointer; transition: background 0.2s; }
+    .scheme-item:hover { background: rgba(0,0,0,0.03); }
+    .scheme-item .scheme-name { flex: 1; word-break: break-word; }
+    .scheme-item .delete-scheme-btn { background: #ffffff; color: #333; border: 1px solid #ddd; cursor: pointer; font-size: 12px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 4px; margin-left: 8px; transition: background 0.2s; }
+    .scheme-item .delete-scheme-btn:hover { background: #f0f0f0; }
+
+    /* ============ 外观主题页面 ============ */
+    .theme-page { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #fff8e7; z-index: 200; display: none; flex-direction: column; padding: 20px; overflow-y: auto; }
+    .theme-page.visible { display: flex; }
+    .theme-topbar { display: flex; align-items: center; flex-shrink: 0; }
+    .theme-content { flex: 1; display: flex; flex-direction: column; max-width: 600px; margin: 0 auto; width: 100%; gap: 30px; padding-top: 20px; }
+    .theme-section { display: flex; flex-direction: column; gap: 16px; }
+    .theme-section .section-title { font-size: 20px; font-weight: 700; color: #000; border-bottom: 1px solid #ddd; padding-bottom: 8px; }
+    .theme-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .wallpaper-preview { width: 100%; height: 200px; border-radius: 12px; background-size: cover; background-position: center; background-color: #ddd; transition: filter 0.2s, opacity 0.2s; }
+    .slider-container { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+    .slider-container label { font-size: 14px; font-weight: 400; color: #000; }
+    .slider-container input[type="range"] { width: 100%; }
+    .color-btn { background: #000; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
+    .font-list { display: flex; flex-direction: column; gap: 6px; }
+    .font-item { display: flex; align-items: center; justify-content: space-between; background: transparent; border: 1px solid #ddd; padding: 8px 12px; border-radius: 8px; font-size: 14px; cursor: pointer; }
+    .font-item .font-name { flex: 1; }
+    .font-item .delete-font-btn { background: #ffffff; color: #333; border: 1px solid #ddd; cursor: pointer; font-size: 12px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 4px; margin-left: 8px; }
+    .font-item .delete-font-btn:hover { background: #f0f0f0; }
+ 
+    /* ============ 记忆库页面 ============ */
+.memory-page {
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  background: #fff8e7;
+  z-index: 200;
+  display: none;
+  flex-direction: column;
+  padding: 20px;
+  overflow-y: auto;
+}
+.memory-page.visible { display: flex; }
+
+.memory-topbar {
+  display: flex; align-items: center; flex-shrink: 0;
+}
+
+.memory-content {
+  flex: 1;
+  display: flex; flex-direction: column;
+  max-width: 600px; margin: 0 auto; width: 100%;
+  gap: 30px; padding-top: 20px;
+}
+
+.memory-section {
+  display: flex; flex-direction: column; gap: 16px;
+}
+
+.memory-list {
+  display: flex; flex-direction: column; gap: 8px;
+}
+
+.memory-item {
+  display: flex; align-items: center; justify-content: space-between;
+  background: transparent; border: 1px solid #ddd; padding: 8px 12px;
+  border-radius: 8px; font-size: 14px;
+}
+.memory-item .memory-info { flex: 1; word-break: break-word; }
+.memory-item .memory-actions { display: flex; align-items: center; gap: 6px; }
+.memory-item .memory-actions button {
+  background: none; border: none; cursor: pointer; font-size: 16px;
+}
+.memory-item .memory-actions .edit-memory-btn { color: #333; }
+.memory-item .memory-actions .delete-memory-btn { color: #f00; }
+
+    /* ============ 弹窗通用 ============ */
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.3); z-index: 300; display: none; align-items: center; justify-content: center; }
+    .modal-overlay.visible { display: flex; }
+    .modal-box { background: #fff; padding: 24px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); width: 320px; max-width: 90%; display: flex; flex-direction: column; gap: 16px; }
+    .modal-box h3 { font-size: 18px; margin: 0; }
+    .modal-box p { font-size: 14px; margin: 0; }
+    .modal-box input, .modal-box textarea { padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; outline: none; }
+    .modal-box .modal-btns { display: flex; justify-content: space-between; align-items: center; }
+    .modal-box .modal-btns button { padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    .modal-box .confirm-btn { background: #000; color: #fff; }
+    .modal-box .confirm-btn:hover { background: #333; }
+    .modal-box .cancel-btn { background: #eee; color: #000; }
+    .modal-box .cancel-btn:hover { background: #ddd; }
+    .modal-box .delete-btn { background: #f00; color: #fff; }
+    .modal-box .delete-btn:hover { background: #c00; }
+
+    /* ============ 技能列表样式 ============ */
+    .skill-section { width: 100%; display: flex; flex-direction: column; gap: 12px; }
+    .skill-list { display: flex; flex-direction: column; gap: 8px; }
+    .skill-item { display: flex; align-items: center; justify-content: space-between; background: transparent; border: 1px solid #ddd; padding: 8px 12px; border-radius: 8px; font-size: 14px; }
+    .skill-item .skill-name { flex: 1; word-break: break-word; }
+    .skill-item .skill-actions { display: flex; align-items: center; gap: 6px; }
+    .skill-item .skill-actions button { background: none; border: none; cursor: pointer; font-size: 16px; }
+    .skill-item .skill-actions .edit-btn { color: #333; }
+    .skill-item .skill-actions .delete-btn { color: #f00; }
+    .skill-item .skill-actions .toggle-btn { width: 40px; height: 20px; border-radius: 10px; background: #ccc; position: relative; transition: background 0.2s; }
+    .skill-item .skill-actions .toggle-btn.enabled { background: #4caf50; }
+    .skill-item .skill-actions .toggle-btn::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left 0.2s; }
+    .skill-item .skill-actions .toggle-btn.enabled::after { left: 22px; }
+
+    /* ============ 消息上下文菜单 ============ */
+    .message-context-menu { position: fixed; background: #fff; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 400; display: none; flex-direction: column; padding: 4px 0; }
+    .message-context-menu .menu-item-btn { padding: 8px 16px; font-size: 14px; background: none; border: none; cursor: pointer; text-align: left; }
+    .message-context-menu .menu-item-btn:hover { background: #f0f0f0; }
+    .message-context-menu .danger { color: #f00; }
+
+    @media (max-width: 600px) {
+      .api-content, .theme-content, .assistant-content { padding-top: 15px; gap: 20px; }
+      .avatar-uploader { width: 80px; height: 80px; font-size: 24px; }
+      .modal-box { width: 85%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- ===== 侧边栏 ===== -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span>功能菜单</span>
+        <button class="sidebar-close" id="sidebarCloseBtn" aria-label="关闭侧边栏">×</button>
+      </div>
+
+      <div class="menu-item">聊天记录</div>
+      <div class="menu-item" id="assistantSettingsMenu">AI 助手设置</div>
+      <div class="menu-item" id="themeSettingsMenu">外观主题</div>
+      <div class="menu-item" id="apiSettingsMenu">API 设置</div>
+      <div class="menu-item" id="memoryMenu">记忆库</div>
+
+      <div class="menu-item" id="historyToggle">历史窗口</div>
+      <div class="history-panel" id="historyPanel">
+        <div class="history-list" id="historyList"></div>
+      </div>
+
+      <div class="sidebar-footer">v1.4</div>
+    </aside>
+
+    <!-- ===== 聊天主区域 ===== -->
+    <main class="chat-area" id="chatArea">
+      <div class="chat-background" id="chatBackground"></div>
+      <header class="chat-header">
+        <button class="menu-toggle" id="menuToggleBtn" aria-label="打开侧边栏">
+          <span class="bar"></span>
+          <span class="bar"></span>
+          <span class="bar"></span>
+        </button>
+        <span class="chat-title">₍^. .^₎⟆</span>
+        <button class="new-chat-btn" id="newChatBtn" title="开启新聊天">ʚ₍ᐢ. .ᐢ₎ɞ</button>
+      </header>
+
+      <div class="messages" id="messagesContainer"></div>
+
+      <div class="tray" id="tray"></div>
+
+      <div class="input-area" id="inputArea">
+        <button class="plus-btn" id="plusBtn" title="更多功能">+</button>
+        <input type="text" id="messageInput" placeholder="输入消息，回车发送..." autocomplete="off" />
+        <button type="button" id="sendBtn">发送</button>
+      </div>
+    </main>
+  </div>
+
+  <!-- ===== 助手设置页面 ===== -->
+  <div class="assistant-page" id="assistantPage">
+    <div class="assistant-topbar">
+      <button class="back-btn" id="backBtn">back</button>
+    </div>
+    <div class="assistant-content">
+      <input class="name-input" id="assistantNameInput" placeholder="AI助手" maxlength="20" />
+      <div class="avatar-uploader" id="assistantAvatarUploader">
+        <span id="assistantAvatarText">AI</span>
+        <img id="assistantAvatarImg" style="display: none;" />
+      </div>
+      <input type="file" id="assistantAvatarFileInput" class="hidden-file-input" accept="image/*" />
+
+      <div class="field-group">
+        <label>Background</label>
+        <textarea id="assistantBackground" placeholder="在这里描述AI助手的身份、性格、说话风格等..."></textarea>
+        <div class="save-btn-container">
+          <button class="save-btn" id="saveAssistantBackgroundBtn">保存</button>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label>Preferences</label>
+        <div class="add-like-row">
+          <input type="text" id="assistantNewLikeInput" placeholder="添加一条喜好" />
+          <button id="assistantAddLikeBtn">添加</button>
+        </div>
+        <div class="likes-list" id="assistantLikesList"></div>
+      </div>
+
+      <hr class="section-divider" />
+
+      <!-- Skill 板块 -->
+      <div class="field-group">
+        <label>Skill</label>
+        <div class="skill-section">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span>世界书</span>
+            <button id="addWorldbookBtn" class="save-btn" style="display:inline-block;">添加</button>
+          </div>
+          <div class="skill-list" id="worldbookList"></div>
+        </div>
+        <div class="skill-section">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span>提示词</span>
+            <button id="addPromptBtn" class="save-btn" style="display:inline-block;">添加</button>
+          </div>
+          <div class="skill-list" id="promptList"></div>
+        </div>
+      </div>
+
+      <hr class="section-divider" />
+
+      <input class="name-input" id="userNameInput" placeholder="我的姓名" maxlength="20" />
+      <div class="avatar-uploader" id="userAvatarUploader" style="background: linear-gradient(135deg, #ffd89b 0%, #f7b733 100%);">
+        <span id="userAvatarText">我</span>
+        <img id="userAvatarImg" style="display: none;" />
+      </div>
+      <input type="file" id="userAvatarFileInput" class="hidden-file-input" accept="image/*" />
+
+      <div class="field-group">
+        <label>Background</label>
+        <textarea id="userBackground" placeholder="在这里描述你自己，让AI更了解你..."></textarea>
+        <div class="save-btn-container">
+          <button class="save-btn" id="saveUserBackgroundBtn">保存</button>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label>Preferences</label>
+        <div class="add-like-row">
+          <input type="text" id="userNewLikeInput" placeholder="添加一条喜好" />
+          <button id="userAddLikeBtn">添加</button>
+        </div>
+        <div class="likes-list" id="userLikesList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== API 设置页面 ===== -->
+  <div class="api-page" id="apiPage">
+    <div class="api-topbar">
+      <button class="back-btn" id="apiBackBtn">back</button>
+    </div>
+    <div class="api-content">
+      <div class="api-section">
+        <div class="section-title">聊天API</div>
+        <div class="field-group">
+          <label>API连接地址</label>
+          <input type="text" id="chatApiAddress" placeholder="例如 https://api.deepseek.com/v1" />
+        </div>
+        <div class="field-group">
+          <label>API密匙</label>
+          <input type="password" id="chatApiKey" placeholder="请输入API密钥" />
+          <div class="save-btn-container">
+            <button class="save-btn" id="saveChatApiBtn">保存</button>
+          </div>
+        </div>
+        <div class="field-group">
+          <label>选择模型</label>
+          <div class="model-selection">
+            <input type="text" id="chatModelInput" placeholder="模型名称，可手动输入或拉取" />
+            <button id="chatFetchModelsBtn">拉取</button>
+          </div>
+          <div class="model-list" id="chatModelList"></div>
+        </div>
+        <div class="test-area">
+          <div class="progress-bar" id="chatApiTestBar"></div>
+          <div class="test-message" id="chatApiTestMsg"></div>
+        </div>
+        <div class="field-group">
+          <label>方案保存</label>
+          <div class="scheme-list" id="chatSchemeList"></div>
+        </div>
+      </div>
+
+      <div class="api-section">
+        <div class="section-title">语音API</div>
+        <div class="field-group">
+          <label>API连接地址</label>
+          <input type="text" id="voiceApiAddress" placeholder="例如 https://api.speech.com/v1" />
+        </div>
+        <div class="field-group">
+          <label>API密匙</label>
+          <input type="password" id="voiceApiKey" placeholder="请输入API密钥" />
+          <div class="save-btn-container">
+            <button class="save-btn" id="saveVoiceApiBtn">保存</button>
+          </div>
+        </div>
+        <div class="field-group">
+          <label>选择模型</label>
+          <div class="model-selection">
+            <input type="text" id="voiceModelInput" placeholder="模型名称，可手动输入或拉取" />
+            <button id="voiceFetchModelsBtn">拉取</button>
+          </div>
+          <div class="model-list" id="voiceModelList"></div>
+        </div>
+        <div class="test-area">
+          <div class="progress-bar" id="voiceApiTestBar"></div>
+          <div class="test-message" id="voiceApiTestMsg"></div>
+        </div>
+        <div class="field-group">
+          <label>方案保存</label>
+          <div class="scheme-list" id="voiceSchemeList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 外观主题页面 ===== -->
+  <div class="theme-page" id="themePage">
+    <div class="theme-topbar">
+      <button class="back-btn" id="themeBackBtn">back</button>
+    </div>
+    <div class="theme-content">
+      <div class="theme-section">
+        <div class="section-title">壁纸设置</div>
+        <div class="wallpaper-preview" id="wallpaperPreview"></div>
+        <div class="field-group">
+          <label>图片上传</label>
+          <div class="theme-row">
+            <input type="file" id="wallpaperFileInput" accept="image/*" style="display:none;" />
+            <button id="uploadWallpaperBtn" class="save-btn" style="display:inline-block;">上传图片</button>
+          </div>
+        </div>
+        <div class="field-group">
+          <label>细致效果</label>
+          <div class="theme-row">
+            <div class="slider-container">
+              <label for="blurSlider">模糊度</label>
+              <input type="range" id="blurSlider" min="0" max="20" step="0.5" value="0" />
+            </div>
+            <div class="slider-container">
+              <label for="opacitySlider">透明度</label>
+              <input type="range" id="opacitySlider" min="0" max="1" step="0.05" value="1" />
+            </div>
+          </div>
+          <div class="save-btn-container">
+            <button class="save-btn" id="saveWallpaperBtn">保存</button>
+          </div>
+        </div>
+      </div>
+
+       <div class="theme-section">
+        <div class="section-title">气泡设置</div>
+        <div class="field-group">
+          <label>字体设置</label>
+          <div class="theme-row">
+            <input type="file" id="fontFileInput" accept=".ttf,.otf,.woff,.woff2" style="display:none;" />
+            <button id="uploadFontBtn" class="save-btn" style="display:inline-block;">上传字体</button>
+            <button id="saveFontBtn" class="save-btn" style="display:inline-block;">保存为存档</button>
+          </div>
+          <div class="font-list" id="fontList"></div>
+        </div>
+        <div class="field-group">
+          <label>字体颜色</label>
+          <div class="theme-row">
+            <button class="color-btn" id="fontColorBtn">取色</button>
+            <input type="color" id="fontColorInput" style="display:none;" />
+            <span id="fontColorValue"></span>
+          </div>
+        </div>
+        <div class="field-group">
+          <label>气泡背景色</label>
+          <div class="theme-row">
+            <span>用户气泡</span>
+            <button class="color-btn" id="userBubbleColorBtn">取色</button>
+            <input type="color" id="userBubbleColorInput" style="display:none;" />
+            <span>AI气泡</span>
+            <button class="color-btn" id="assistantBubbleColorBtn">取色</button>
+            <input type="color" id="assistantBubbleColorInput" style="display:none;" />
+          </div>
+        </div>
+        <div class="field-group">
+          <label>气泡形状大小</label>
+          <div class="theme-row">
+            <div class="slider-container">
+              <label for="bubbleSizeSlider">大小</label>
+              <input type="range" id="bubbleSizeSlider" min="12" max="24" step="0.5" value="15" />
+            </div>
+            <div class="slider-container">
+              <label for="bubbleRadiusSlider">圆角</label>
+              <input type="range" id="bubbleRadiusSlider" min="0" max="30" step="0.5" value="18" />
+            </div>
+          </div>
+          <div class="save-btn-container">
+            <button class="save-btn" id="saveBubbleBtn">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div> 
+ 
+<!-- ===== 记忆库页面 ===== -->
+<div class="memory-page" id="memoryPage">
+  <div class="memory-topbar">
+    <button class="back-btn" id="memoryBackBtn">back</button>
+  </div>
+  <div class="memory-content">
+    <div class="memory-section">
+      <div class="section-title">记忆库</div>
+      <div class="theme-row">
+        <button class="save-btn" id="addMemoryBtn" style="display:inline-block;">添加记忆</button>
+        <button class="save-btn" id="exportMemoryBtn" style="display:inline-block;">导出记忆</button>
+        <button class="save-btn" id="importMemoryBtn" style="display:inline-block;">导入记忆</button>
+        <input type="file" id="importMemoryFileInput" accept=".json" style="display:none;" />
+      </div>
+      <div class="memory-list" id="memoryList"></div>
+    </div>
+  </div>
+</div>
+
+  <!-- ===== 方案命名弹窗 ===== -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal-box">
+      <h3>保存方案</h3>
+      <input type="text" id="schemeNameInput" placeholder="方案名称（默认：方案1）" />
+      <div class="modal-btns">
+        <button class="cancel-btn" id="modalCancelBtn">取消</button>
+        <button class="confirm-btn" id="modalConfirmBtn">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 删除确认弹窗 ===== -->
+  <div class="modal-overlay" id="deleteModalOverlay">
+    <div class="modal-box">
+      <h3>确认删除</h3>
+      <p id="deleteModalMessage">确定要删除该窗口吗？此操作不可恢复。</p>
+      <div class="modal-btns">
+        <button class="cancel-btn" id="deleteModalCancelBtn">取消</button>
+        <button class="confirm-btn" id="deleteModalConfirmBtn">确定</button>
+      </div>
+    </div>
+  </div>
+ 
+   <!-- ===== 记忆编辑弹窗 ===== -->
+   <div class="modal-overlay" id="memoryModalOverlay">
+     <div class="modal-box">
+       <h3 id="memoryModalTitle">添加记忆</h3>
+       <select id="memoryCategoryInput">
+       <option value="经历">经历</option>
+       <option value="习惯">习惯</option>
+       </select>
+       <textarea id="memoryContentInput" placeholder="记忆内容"></textarea>
+       <div class="modal-btns">
+         <button class="delete-btn" id="memoryDeleteBtn" style="visibility:hidden;">删除</button>
+         <button class="confirm-btn" id="memorySaveBtn">保存</button>
+       </div>
+     <div class="modal-btns" style="justify-content:flex-end;">
+         <button class="cancel-btn" id="memoryCancelBtn">取消</button>
+       </div>
+     </div>
+  </div>
+
+  <!-- ===== 字体命名弹窗 ===== -->
+  <div class="modal-overlay" id="fontModalOverlay">
+    <div class="modal-box">
+      <h3>保存字体</h3>
+      <input type="text" id="fontNameInput" placeholder="字体名称" />
+      <div class="modal-btns">
+        <button class="cancel-btn" id="fontModalCancelBtn">取消</button>
+        <button class="confirm-btn" id="fontModalConfirmBtn">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 技能编辑弹窗（世界书/提示词通用） ===== -->
+  <div class="modal-overlay" id="skillModalOverlay">
+    <div class="modal-box">
+      <h3 id="skillModalTitle">添加技能</h3>
+      <input type="text" id="skillNameInput" placeholder="名称" />
+      <textarea id="skillContentInput" placeholder="内容"></textarea>
+      <!-- 世界书深度设置，默认隐藏 -->
+      <div id="depthContainer" style="display:none;">
+        <label for="skillDepthInput">深度设置</label>
+        <input type="number" id="skillDepthInput" placeholder="上下文消息数" min="0" />
+      </div>
+      <div class="modal-btns">
+        <button class="delete-btn" id="skillDeleteBtn" style="visibility:hidden;">删除</button>
+        <button class="confirm-btn" id="skillSaveBtn">保存</button>
+      </div>
+      <div class="modal-btns" style="justify-content:flex-end;">
+        <button class="cancel-btn" id="skillCancelBtn">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 消息上下文菜单 ===== -->
+  <div class="message-context-menu" id="messageContextMenu">
+    <button class="menu-item-btn" id="contextDeleteBtn">删除</button>
+    <button class="menu-item-btn" id="contextRegenerateBtn" style="display:none;">重新生成</button>
+  </div>
+
+  <script>
+    // ============ 数据模型 ============
+    let sessions = [];
+    let currentSessionId = null;
+    let sessionIdCounter = 0;
+    let assistantSettings = {
+      name: 'AI助手',
+      background: '',
+      likes: [],
+      avatar: null,
+      skillPrompts: [],
+      skillWorldbook: []
+    };
+    let userSettings = { name: '', background: '', likes: [], avatar: null };
+    let apiSettings = {
+      chat: { address: '', key: '', model: '' },
+      voice: { address: '', key: '', model: '' },
+      chatSchemes: [],
+      voiceSchemes: []
+    };
+    let themeSettings = {
+      wallpaperImage: null,
+      wallpaperBlur: 0,
+      wallpaperOpacity: 1,
+      fonts: [{ name: '默认字体', data: null }],
+      currentFontName: '默认字体',
+      fontColor: '#000000',
+      userBubbleColor: '#ffffff',
+      assistantBubbleColor: '#ffffff',
+      bubbleSize: 15,
+      bubbleRadius: 18
+    };
+    let memoryLibrary = []; // 记忆库数组，存储 { id, category, content, createdAt }
+
+    const STORAGE_KEY = 'myChatAppData';
+    // 初始化 Supabase 客户端
+    const SUPABASE_URL = 'https://agvtyucaytcddjuijdju.supabase.co';
+
+
+    const SUPABASE_ANON_KEY = 'sb_publishable_NnACaIMKuNOxTS9KgcJACw_WB0UjUzS'
+    // 创建 Supabase 客户端（带安全判断，避免库加载失败导致页面崩溃）
+    var supabaseClient = null;  // 注意这里改成了 supabaseClient，避开重名
+    try {
+      if (window.supabase && typeof window.supabase.createClient === 'function') {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        console.log('✅ Supabase 客户端初始化成功');
+      } else {
+        console.warn('⚠️ Supabase 库未加载，云端同步功能暂不可用');
+      }
+    } catch (e) {
+      console.error('Supabase 初始化失败:', e.message);
+      supabaseClient = null;
+    }
+    // ============ 数据持久化 ============
+    function saveData() {
+  const data = {
+    sessions,
+    currentSessionId,
+    sessionIdCounter,
+    assistantSettings,
+    userSettings,
+    apiSettings,
+    themeSettings,
+    memoryLibrary
+  };
+  const jsonData = JSON.stringify(data);
+  localStorage.setItem(STORAGE_KEY, jsonData);
+
+   // 同步到 Supabase（异步，但不阻塞）
+  if (supabaseClient) {
+    supabaseClient
+      .from('user_data')
+      .upsert({ id: 'default', data: data, updated_at: new Date().toISOString() })
+      .then(({ error }) => {
+        if (error) {
+          console.error('Supabase 保存失败:', error.message);
+        } else {
+          console.log('✅ 已同步到云端');
+        }
+      });
+  }
+}
+
+    function loadData() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          sessions = parsed.sessions || [];
+          currentSessionId = parsed.currentSessionId || null;
+          sessionIdCounter = parsed.sessionIdCounter || 0;
+          assistantSettings = parsed.assistantSettings || { name: 'AI助手', background: '', likes: [], avatar: null };
+          userSettings = parsed.userSettings || { name: '', background: '', likes: [], avatar: null };
+          apiSettings = parsed.apiSettings || {
+            chat: { address: '', key: '', model: '' },
+            voice: { address: '', key: '', model: '' },
+            chatSchemes: [],
+            voiceSchemes: []
+          };
+          themeSettings = parsed.themeSettings || {
+            wallpaperImage: null,
+            wallpaperBlur: 0,
+            wallpaperOpacity: 1,
+            fonts: [{ name: '默认字体', data: null }],
+            currentFontName: '默认字体',
+            fontColor: '#000000',
+            userBubbleColor: '#ffffff',
+            assistantBubbleColor: '#ffffff',
+            bubbleSize: 15,
+            bubbleRadius: 18
+          };
+
+            memoryLibrary = parsed.memoryLibrary || [];
+
+          if (!assistantSettings.skillPrompts) assistantSettings.skillPrompts = [];
+          if (!assistantSettings.skillWorldbook) assistantSettings.skillWorldbook = [];
+
+          sessions.forEach(session => {
+            session.messages.forEach(msg => {
+              if (!msg.id) msg.id = generateMessageId();
+            });
+          });
+
+          if (sessions.length === 0) createNewSession();
+          if (!sessions.some(s => s.id === currentSessionId)) currentSessionId = sessions[0].id;
+        } catch (e) {
+          console.error('数据加载失败，使用默认数据', e);
+          createNewSession();
+        }
+      } else {
+        createNewSession();
+      }
+    // 异步从 Supabase 加载最新数据
+    if (supabaseClient) {
+      supabaseClient
+        .from('user_data')
+        .select('data')
+        .eq('id', 'default')
+        .maybeSingle()
+
+             .then(({ data, error }) => {
+          if (error) {
+            console.error('Supabase 加载失败:', error.message);
+            return;
+          }
+          if (data && data.data) {
+            try {
+              const cloud = data.data;
+              sessions = cloud.sessions || [];
+              currentSessionId = cloud.currentSessionId || null;
+              sessionIdCounter = cloud.sessionIdCounter || 0;
+              assistantSettings = cloud.assistantSettings || assistantSettings;
+              userSettings = cloud.userSettings || userSettings;
+              apiSettings = cloud.apiSettings || apiSettings;
+              themeSettings = cloud.themeSettings || themeSettings;
+              memoryLibrary = cloud.memoryLibrary || [];
+
+              if (!assistantSettings.skillPrompts) assistantSettings.skillPrompts = [];
+              if (!assistantSettings.skillWorldbook) assistantSettings.skillWorldbook = [];
+              sessions.forEach(session => {
+                session.messages.forEach(msg => { if (!msg.id) msg.id = generateMessageId(); });
+              });
+
+              renderMessages();
+              renderHistoryList();
+              renderSkillLists();
+              applyThemeToChat();
+              console.log('✅ 已从云端加载数据');
+            } catch (err) {
+              console.error('解析云端数据失败:', err);
+            }
+          }
+        });
+    }
+} 
+         
+
+    // ============ 会话管理 ============
+    function createNewSession() {
+      const session = { id: sessionIdCounter++, name: '聊天 ' + (sessionIdCounter), createdAt: Date.now(), messages: [] };
+      sessions.push(session);
+      return session;
+    }
+
+    function switchSession(sessionId) {
+      currentSessionId = sessionId;
+      renderMessages();
+      renderHistoryList();
+      saveData();
+    }
+
+    function createAndSwitchNewSession() {
+      const session = createNewSession();
+      currentSessionId = session.id;
+      renderMessages();
+      renderHistoryList();
+      saveData();
+      messageInput.focus();
+    }
+
+    function getCurrentSession() {
+      return sessions.find(s => s.id === currentSessionId) || null;
+    }
+
+    // ============ DOM 元素 ============
+    const sidebar = document.getElementById('sidebar');
+    const menuToggleBtn = document.getElementById('menuToggleBtn');
+    const sidebarCloseBtn = document.getElementById('sidebarCloseBtn');
+    const messagesContainer = document.getElementById('messagesContainer');
+    const messageInput = document.getElementById('messageInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const newChatBtn = document.getElementById('newChatBtn');
+    const historyToggle = document.getElementById('historyToggle');
+    const historyPanel = document.getElementById('historyPanel');
+    const historyList = document.getElementById('historyList');
+    const chatArea = document.getElementById('chatArea');
+    const plusBtn = document.getElementById('plusBtn');
+    const chatBackground = document.getElementById('chatBackground');
+
+    const assistantPage = document.getElementById('assistantPage');
+    const assistantSettingsMenu = document.getElementById('assistantSettingsMenu');
+    const backBtn = document.getElementById('backBtn');
+
+    const assistantNameInput = document.getElementById('assistantNameInput');
+    const assistantAvatarUploader = document.getElementById('assistantAvatarUploader');
+    const assistantAvatarText = document.getElementById('assistantAvatarText');
+    const assistantAvatarImg = document.getElementById('assistantAvatarImg');
+    const assistantAvatarFileInput = document.getElementById('assistantAvatarFileInput');
+    const assistantBackground = document.getElementById('assistantBackground');
+    const saveAssistantBackgroundBtn = document.getElementById('saveAssistantBackgroundBtn');
+    const assistantLikesList = document.getElementById('assistantLikesList');
+    const assistantNewLikeInput = document.getElementById('assistantNewLikeInput');
+    const assistantAddLikeBtn = document.getElementById('assistantAddLikeBtn');
+
+    const userNameInput = document.getElementById('userNameInput');
+    const userAvatarUploader = document.getElementById('userAvatarUploader');
+    const userAvatarText = document.getElementById('userAvatarText');
+    const userAvatarImg = document.getElementById('userAvatarImg');
+    const userAvatarFileInput = document.getElementById('userAvatarFileInput');
+    const userBackground = document.getElementById('userBackground');
+    const saveUserBackgroundBtn = document.getElementById('saveUserBackgroundBtn');
+    const userLikesList = document.getElementById('userLikesList');
+    const userNewLikeInput = document.getElementById('userNewLikeInput');
+    const userAddLikeBtn = document.getElementById('userAddLikeBtn');
+
+    const apiPage = document.getElementById('apiPage');
+    const apiSettingsMenu = document.getElementById('apiSettingsMenu');
+    const apiBackBtn = document.getElementById('apiBackBtn');
+
+    const chatApiAddress = document.getElementById('chatApiAddress');
+    const chatApiKey = document.getElementById('chatApiKey');
+    const saveChatApiBtn = document.getElementById('saveChatApiBtn');
+    const chatModelInput = document.getElementById('chatModelInput');
+    const chatFetchModelsBtn = document.getElementById('chatFetchModelsBtn');
+    const chatModelList = document.getElementById('chatModelList');
+    const chatApiTestBar = document.getElementById('chatApiTestBar');
+    const chatApiTestMsg = document.getElementById('chatApiTestMsg');
+    const chatSchemeList = document.getElementById('chatSchemeList');
+
+    const voiceApiAddress = document.getElementById('voiceApiAddress');
+    const voiceApiKey = document.getElementById('voiceApiKey');
+    const saveVoiceApiBtn = document.getElementById('saveVoiceApiBtn');
+    const voiceModelInput = document.getElementById('voiceModelInput');
+    const voiceFetchModelsBtn = document.getElementById('voiceFetchModelsBtn');
+    const voiceModelList = document.getElementById('voiceModelList');
+    const voiceApiTestBar = document.getElementById('voiceApiTestBar');
+    const voiceApiTestMsg = document.getElementById('voiceApiTestMsg');
+    const voiceSchemeList = document.getElementById('voiceSchemeList');
+
+    const modalOverlay = document.getElementById('modalOverlay');
+    const schemeNameInput = document.getElementById('schemeNameInput');
+    const modalCancelBtn = document.getElementById('modalCancelBtn');
+    const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+
+    const deleteModalOverlay = document.getElementById('deleteModalOverlay');
+    const deleteModalMessage = document.getElementById('deleteModalMessage');
+    const deleteModalCancelBtn = document.getElementById('deleteModalCancelBtn');
+    const deleteModalConfirmBtn = document.getElementById('deleteModalConfirmBtn');
+
+    // 记忆弹窗 DOM
+    const memoryModalOverlay = document.getElementById('memoryModalOverlay');
+    const memoryModalTitle = document.getElementById('memoryModalTitle');
+    const memoryCategoryInput = document.getElementById('memoryCategoryInput');
+    const memoryContentInput = document.getElementById('memoryContentInput');
+    const memoryDeleteBtn = document.getElementById('memoryDeleteBtn');
+    const memorySaveBtn = document.getElementById('memorySaveBtn');
+    const memoryCancelBtn = document.getElementById('memoryCancelBtn');
+
+    const themePage = document.getElementById('themePage');
+    const themeSettingsMenu = document.getElementById('themeSettingsMenu');
+    const themeBackBtn = document.getElementById('themeBackBtn');
+    const wallpaperPreview = document.getElementById('wallpaperPreview');
+    const wallpaperFileInput = document.getElementById('wallpaperFileInput');
+    const uploadWallpaperBtn = document.getElementById('uploadWallpaperBtn');
+    const blurSlider = document.getElementById('blurSlider');
+    const opacitySlider = document.getElementById('opacitySlider');
+    const saveWallpaperBtn = document.getElementById('saveWallpaperBtn');
+    const fontFileInput = document.getElementById('fontFileInput');
+    const uploadFontBtn = document.getElementById('uploadFontBtn');
+    const saveFontBtn = document.getElementById('saveFontBtn');
+    const fontList = document.getElementById('fontList');
+    const fontColorBtn = document.getElementById('fontColorBtn');
+    const fontColorInput = document.getElementById('fontColorInput');
+    const fontColorValue = document.getElementById('fontColorValue');
+    const userBubbleColorBtn = document.getElementById('userBubbleColorBtn');
+    const userBubbleColorInput = document.getElementById('userBubbleColorInput');
+    const assistantBubbleColorBtn = document.getElementById('assistantBubbleColorBtn');
+    const assistantBubbleColorInput = document.getElementById('assistantBubbleColorInput');
+    const bubbleSizeSlider = document.getElementById('bubbleSizeSlider');
+    const bubbleRadiusSlider = document.getElementById('bubbleRadiusSlider');
+    const saveBubbleBtn = document.getElementById('saveBubbleBtn');
+
+    const fontModalOverlay = document.getElementById('fontModalOverlay');
+    const fontNameInput = document.getElementById('fontNameInput');
+    const fontModalCancelBtn = document.getElementById('fontModalCancelBtn');
+    const fontModalConfirmBtn = document.getElementById('fontModalConfirmBtn');
+
+    // 技能相关 DOM
+    const addWorldbookBtn = document.getElementById('addWorldbookBtn');
+    const memoryPage = document.getElementById('memoryPage');
+    const memoryMenu = document.getElementById('memoryMenu');
+    const memoryBackBtn = document.getElementById('memoryBackBtn');
+    const memoryList = document.getElementById('memoryList');
+    const addMemoryBtn = document.getElementById('addMemoryBtn');
+    const exportMemoryBtn = document.getElementById('exportMemoryBtn');
+    const importMemoryBtn = document.getElementById('importMemoryBtn');
+    const importMemoryFileInput = document.getElementById('importMemoryFileInput');
+    const addPromptBtn = document.getElementById('addPromptBtn');
+    const worldbookList = document.getElementById('worldbookList');
+    const promptList = document.getElementById('promptList');
+    const skillModalOverlay = document.getElementById('skillModalOverlay');
+    const skillModalTitle = document.getElementById('skillModalTitle');
+    const skillNameInput = document.getElementById('skillNameInput');
+    const skillContentInput = document.getElementById('skillContentInput');
+    const skillDepthInput = document.getElementById('skillDepthInput');
+    const depthContainer = document.getElementById('depthContainer');
+    const skillDeleteBtn = document.getElementById('skillDeleteBtn');
+    const skillSaveBtn = document.getElementById('skillSaveBtn');
+    const skillCancelBtn = document.getElementById('skillCancelBtn');
+
+    // 消息上下文菜单
+    const messageContextMenu = document.getElementById('messageContextMenu');
+    const contextDeleteBtn = document.getElementById('contextDeleteBtn');
+    const contextRegenerateBtn = document.getElementById('contextRegenerateBtn');
+
+    let pendingScheme = null;
+    let pendingDeleteSessionId = null;
+    let isStreaming = false;
+    let pendingFontData = null;
+
+    let editingSkillType = null;
+    let editingSkillId = null;
+    let contextMessageId = null;
+    let contextMessageRole = null;
+
+    // ============ 侧边栏控制 ============
+    function openSidebar() { sidebar.classList.add('open'); menuToggleBtn.classList.add('active'); }
+    function closeSidebar() { sidebar.classList.remove('open'); menuToggleBtn.classList.remove('active'); }
+    function toggleSidebar() { if (sidebar.classList.contains('open')) closeSidebar(); else openSidebar(); }
+    menuToggleBtn.addEventListener('click', toggleSidebar);
+    sidebarCloseBtn.addEventListener('click', closeSidebar);
+    document.addEventListener('click', function (e) {
+      if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && !menuToggleBtn.contains(e.target)) closeSidebar();
+      if (messageContextMenu.style.display === 'flex' && !messageContextMenu.contains(e.target)) hideContextMenu();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { closeSidebar(); closeModal(); closeDeleteModal(); closeFontModal(); closeSkillModal(); hideContextMenu(); }
+    });
+
+    // ============ 历史窗口展开/收起 ============
+    historyToggle.addEventListener('click', function () { historyPanel.classList.toggle('open'); });
+
+    // ============ 时间格式化 ============
+    function formatTime(timestamp) {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const msgYear = date.getFullYear();
+      const currentYear = now.getFullYear();
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      if (msgYear === currentYear) return month + '.' + day + '  ' + hours + ':' + minutes;
+      else return msgYear + '.' + month + '.' + day + '  ' + hours + ':' + minutes;
+    }
+
+    // ============ 生成消息ID ============
+    function generateMessageId() {
+      return Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    }
+
+    // ============ 消息渲染 ============
+    function renderMessages() {
+      const session = getCurrentSession();
+      if (!session) return;
+      messagesContainer.innerHTML = '';
+      session.messages.forEach(msg => appendMessageElement(msg));
+      scrollToBottom();
+    }
+
+    function appendMessageElement(msg) {
+      const row = document.createElement('div');
+      row.className = 'message-row ' + msg.role;
+      row.dataset.messageId = msg.id;
+      row.dataset.role = msg.role;
+
+      const avatar = document.createElement('div');
+      avatar.className = 'avatar ' + (msg.role === 'user' ? 'user-avatar' : 'assistant-avatar');
+      if (msg.role === 'user') {
+        if (userSettings.avatar) {
+          const img = document.createElement('img'); img.src = userSettings.avatar; img.alt = '我'; avatar.appendChild(img);
+        } else avatar.textContent = '我';
+      } else {
+        if (assistantSettings.avatar) {
+          const img = document.createElement('img'); img.src = assistantSettings.avatar; img.alt = 'AI'; avatar.appendChild(img);
+        } else avatar.textContent = 'AI';
+      }
+
+      const content = document.createElement('div');
+      content.className = 'message-content';
+      const meta = document.createElement('div');
+      meta.className = 'message-meta';
+      meta.textContent = formatTime(msg.timestamp);
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+
+      if (msg.role === 'user') {
+        bubble.style.backgroundColor = themeSettings.userBubbleColor;
+      } else {
+        bubble.style.backgroundColor = themeSettings.assistantBubbleColor;
+      }
+      bubble.style.color = themeSettings.fontColor;
+      bubble.style.fontSize = themeSettings.bubbleSize + 'px';
+      bubble.style.borderRadius = themeSettings.bubbleRadius + 'px';
+      bubble.style.fontFamily = getCurrentFontFamily();
+
+      bubble.textContent = msg.content;
+
+      content.appendChild(meta);
+      content.appendChild(bubble);
+      row.appendChild(avatar);
+      row.appendChild(content);
+      messagesContainer.appendChild(row);
+
+      // 绑定右键/长按事件
+      row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showContextMenu(e.clientX, e.clientY, msg.id, msg.role);
+      });
+      let longPressTimer = null;
+      row.addEventListener('touchstart', (e) => {
+        longPressTimer = setTimeout(() => {
+          const touch = e.touches[0];
+          showContextMenu(touch.clientX, touch.clientY, msg.id, msg.role);
+        }, 5000);
+      });
+      row.addEventListener('touchend', () => clearTimeout(longPressTimer));
+      row.addEventListener('touchmove', () => clearTimeout(longPressTimer));
+    }
+
+    function getCurrentFontFamily() {
+      if (themeSettings.currentFontName === '默认字体') return 'inherit';
+      return '"' + themeSettings.currentFontName + '"';
+    }
+
+    function applyThemeToChat() {
+      if (themeSettings.wallpaperImage) {
+        chatBackground.style.backgroundImage = 'url(' + themeSettings.wallpaperImage + ')';
+        chatBackground.style.backgroundColor = 'transparent';
+      } else {
+        chatBackground.style.backgroundImage = 'linear-gradient(135deg, #a8c0ff 0%, #fbc2eb 50%, #f6d5f7 100%)';
+        chatBackground.style.backgroundColor = 'transparent';
+      }
+      chatBackground.style.filter = 'blur(' + themeSettings.wallpaperBlur + 'px)';
+      chatBackground.style.opacity = themeSettings.wallpaperOpacity;
+
+      wallpaperPreview.style.backgroundImage = themeSettings.wallpaperImage ? 'url(' + themeSettings.wallpaperImage + ')' : 'none';
+      wallpaperPreview.style.backgroundColor = themeSettings.wallpaperImage ? 'transparent' : '#ddd';
+      wallpaperPreview.style.filter = 'blur(' + themeSettings.wallpaperBlur + 'px)';
+      wallpaperPreview.style.opacity = themeSettings.wallpaperOpacity;
+
+      blurSlider.value = themeSettings.wallpaperBlur;
+      opacitySlider.value = themeSettings.wallpaperOpacity;
+      bubbleSizeSlider.value = themeSettings.bubbleSize;
+      bubbleRadiusSlider.value = themeSettings.bubbleRadius;
+      fontColorInput.value = themeSettings.fontColor;
+      userBubbleColorInput.value = themeSettings.userBubbleColor;
+      assistantBubbleColorInput.value = themeSettings.assistantBubbleColor;
+      fontColorValue.textContent = themeSettings.fontColor;
+
+      renderFontList();
+      renderMessages();
+    }
+
+    function scrollToBottom() {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // ============ 历史列表渲染 ============
+    function renderHistoryList() {
+      historyList.innerHTML = '';
+      if (sessions.length === 0) return;
+      const sortedSessions = [...sessions].sort((a, b) => b.createdAt - a.createdAt);
+      sortedSessions.forEach(session => {
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        if (session.id === currentSessionId) item.classList.add('active');
+        item.textContent = session.name;
+        item.title = '创建时间: ' + formatTime(session.createdAt);
+        item.addEventListener('click', () => switchSession(session.id));
+        item.addEventListener('contextmenu', (e) => { e.preventDefault(); openDeleteModal(session.id); });
+        let longPressTimer = null;
+        item.addEventListener('touchstart', (e) => { longPressTimer = setTimeout(() => openDeleteModal(session.id), 5000); });
+        item.addEventListener('touchend', () => { clearTimeout(longPressTimer); });
+        item.addEventListener('touchmove', () => { clearTimeout(longPressTimer); });
+        historyList.appendChild(item);
+      });
+    }
+
+    function openDeleteModal(sessionId) {
+      pendingDeleteSessionId = sessionId;
+      const session = sessions.find(s => s.id === sessionId);
+      deleteModalMessage.textContent = session ? '确定要删除“' + session.name + '”吗？此操作不可恢复。' : '确定要删除该窗口吗？此操作不可恢复。';
+      deleteModalOverlay.classList.add('visible');
+    }
+    function closeDeleteModal() { deleteModalOverlay.classList.remove('visible'); pendingDeleteSessionId = null; }
+    deleteModalCancelBtn.addEventListener('click', closeDeleteModal);
+    deleteModalConfirmBtn.addEventListener('click', () => {
+      if (pendingDeleteSessionId === null) return;
+      const sessionId = pendingDeleteSessionId;
+      sessions = sessions.filter(s => s.id !== sessionId);
+      if (currentSessionId === sessionId) {
+        if (sessions.length > 0) currentSessionId = sessions[0].id;
+        else { const ns = createNewSession(); currentSessionId = ns.id; }
+      }
+      renderMessages(); renderHistoryList(); saveData(); closeDeleteModal();
+    });
+
+    // ============ 消息上下文菜单 ============
+    function showContextMenu(x, y, messageId, role) {
+      contextMessageId = messageId;
+      contextMessageRole = role;
+      if (role === 'assistant') {
+        contextRegenerateBtn.style.display = 'block';
+      } else {
+        contextRegenerateBtn.style.display = 'none';
+      }
+      messageContextMenu.style.left = x + 'px';
+      messageContextMenu.style.top = y + 'px';
+      messageContextMenu.style.display = 'flex';
+    }
+    function hideContextMenu() {
+      messageContextMenu.style.display = 'none';
+      contextMessageId = null;
+      contextMessageRole = null;
+    }
+    contextDeleteBtn.addEventListener('click', () => {
+      if (!contextMessageId) return;
+      deleteMessageById(contextMessageId);
+      hideContextMenu();
+    });
+    contextRegenerateBtn.addEventListener('click', () => {
+      if (!contextMessageId) return;
+      regenerateMessageById(contextMessageId);
+      hideContextMenu();
+    });
+
+    function deleteMessageById(messageId) {
+      const session = getCurrentSession();
+      if (!session) return;
+      session.messages = session.messages.filter(m => m.id !== messageId);
+      renderMessages();
+      saveData();
+    }
+
+    function regenerateMessageById(messageId) {
+      if (isStreaming) return;
+      const session = getCurrentSession();
+      if (!session) return;
+      const idx = session.messages.findIndex(m => m.id === messageId);
+      if (idx === -1 || session.messages[idx].role !== 'assistant') return;
+      session.messages.splice(idx, 1);
+      renderMessages();
+      saveData();
+      callAIStream(session);
+    }
+
+    // ============ 发送消息 ============
+    sendBtn.addEventListener('click', handleSend);
+    messageInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    });
+    newChatBtn.addEventListener('click', () => { createAndSwitchNewSession(); messageInput.focus(); });
+    plusBtn.addEventListener('click', () => { chatArea.classList.toggle('tray-open'); });
+
+    function handleSend() {
+      if (isStreaming) return;
+      const text = messageInput.value.trim();
+      if (!text) return;
+      const session = getCurrentSession();
+      if (!session) {
+        const ns = createNewSession();
+        currentSessionId = ns.id;
+      }
+      const current = getCurrentSession();
+      const msg = { id: generateMessageId(), role: 'user', content: text, timestamp: Date.now() };
+      current.messages.push(msg);
+      messageInput.value = '';
+      renderMessages();
+      renderHistoryList();
+      saveData();
+      callAIStream(current);
+    }
+
+    // ============ 构建系统提示 ============
+    function buildSystemMessage() {
+      let sys = '你是' + (assistantSettings.name || 'AI助手') + '。';
+      if (assistantSettings.background) sys += '\n你的身份背景：' + assistantSettings.background;
+      if (assistantSettings.likes && assistantSettings.likes.length > 0) sys += '\n你的喜好：' + assistantSettings.likes.join('、');
+
+      const enabledPrompts = assistantSettings.skillPrompts.filter(p => p.enabled);
+      if (enabledPrompts.length > 0) {
+        sys += '\n\n提示词技能：';
+        enabledPrompts.forEach(p => {
+          sys += '\n【' + p.name + '】\n' + p.content;
+        });
+      }
+
+      const enabledWorldbook = assistantSettings.skillWorldbook.filter(p => p.enabled);
+      if (enabledWorldbook.length > 0) {
+        sys += '\n\n世界书技能：';
+        enabledWorldbook.forEach(p => {
+          sys += '\n【' + p.name + '】\n' + p.content + (p.depth ? '\n（深度：最近' + p.depth + '条消息）' : '');
+        });
+      }
+
+      sys += '\n\n用户信息：';
+      if (userSettings.name) sys += '\n姓名：' + userSettings.name;
+      if (userSettings.background) sys += '\n身份背景：' + userSettings.background;
+      if (userSettings.likes && userSettings.likes.length > 0) sys += '\n喜好：' + userSettings.likes.join('、');
+
+       const now = new Date();
+       const year = now.getFullYear();
+       const month = now.getMonth() + 1;
+       const day = now.getDate();
+       const hours = now.getHours().toString().padStart(2, '0');
+       const minutes = now.getMinutes().toString().padStart(2, '0');
+       sys += '\n\n当前时间：' + year + '年' + month + '月' + day + '日 ' + hours + ':' + minutes;
+
+       sys += '\n\n你拥有长期记忆库，可以自主添加和删除记忆。';
+       sys += '\n记忆分为两类：经历和习惯。';
+       sys += '\n当对话中出现值得记住的重要信息、事件、用户习惯或你的感受时，请主动添加记忆。';
+       sys += '\n添加记忆时，请在回复中单独一行使用以下格式（不要写在对话正文中）：';
+       sys += '\n【添加记忆：经历】我（AI第一人称）在' + year + '年' + month + '月' + day + '日和茉茉吵架了，我下次一定不能忽略茉茉了。';
+       sys += '\n【添加记忆：习惯】茉茉喜欢喝热牛奶。';
+       sys += '\n注意：记忆内容必须使用第一人称，并包含具体日期（用上面给出的当前日期）。';
+       sys += '\n如果需要删除某条记忆，请使用格式：【删除记忆：记忆内容片段】';
+       sys += '\n这些标记行不会被用户看到，系统会自动处理。请根据对话内容自主决定是否添加记忆，不要遗漏重要信息，但也不要记录琐碎内容。';
+
+       sys += '\n\n请根据这些信息进行自然亲切的对话。';
+       sys += '\n\n请像微信聊天一样回复，每句话单独成条，避免长篇大论。';
+    
+      if (memoryLibrary.length > 0) {
+      sys += '\n\n长期记忆：';
+      const recentMemories = [...memoryLibrary].sort((a, b) => b.createdAt - a.createdAt).slice(0, 50);
+      recentMemories.forEach(mem => {
+      sys += '\n[' + mem.category + '] ' + mem.content;
+      });
+    }
+      return sys;
+    }
+
+    // ============ 流式调用API（支持标点自动分段） ============
+    async function callAIStream(session) {
+      const { address, key, model } = apiSettings.chat;
+      if (!address || !key || !model) {
+        alert('请先在“API设置”中配置聊天API的地址、密钥和模型。');
+        return;
+      }
+      isStreaming = true;
+      sendBtn.disabled = true;
+      messageInput.disabled = true;
+
+
+       // 记录本轮新增消息的起始索引
+      const startIndex = session.messages.length;
+      // 创建一个空 AI 消息
+      let aiMessage = { id: generateMessageId(), role: 'assistant', content: '', timestamp: Date.now() };
+      session.messages.push(aiMessage);
+      renderMessages();
+      const messageRows = messagesContainer.querySelectorAll('.message-row.assistant');
+      let aiRow = messageRows[messageRows.length - 1];
+      let aiBubble = aiRow.querySelector('.bubble');
+      applyStyleToBubble(aiBubble, 'assistant');
+
+      const apiUrl = address.replace(/\/?$/, '') + '/chat/completions';
+      const requestMessages = [
+        { role: 'system', content: buildSystemMessage() },
+        ...session.messages.filter(m => m !== aiMessage)
+      ];
+
+      try {
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + key
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: requestMessages,
+            stream: true,
+            temperature: 0.7
+          }),
+          signal: AbortSignal.timeout(60000)
+        });
+
+        if (!response.ok) {
+          throw new Error('HTTP ' + response.status + ' ' + response.statusText);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith('data:')) continue;
+            const dataStr = trimmed.slice(5).trim();
+            if (dataStr === '[DONE]') continue;
+            try {
+              const json = JSON.parse(dataStr);
+              const delta = json.choices?.[0]?.delta?.content;
+              if (delta) {
+                // 追加内容
+                aiMessage.content += delta;
+                aiBubble.textContent = aiMessage.content;
+                scrollToBottom();
+
+                // 检查是否遇到句子结束标点（。！？）
+                const endsWithPunctuation = /[。！？!?\.]$/.test(aiMessage.content.trim());
+                if (endsWithPunctuation) {
+                  // 当前消息已完整，创建新消息
+                  const newAiMessage = { id: generateMessageId(), role: 'assistant', content: '', timestamp: Date.now() };
+                  session.messages.push(newAiMessage);
+                  // 在 DOM 中创建新的消息行
+                  const newRow = document.createElement('div');
+                  newRow.className = 'message-row assistant';
+                  newRow.dataset.messageId = newAiMessage.id;
+                  newRow.dataset.role = 'assistant';
+                  const newAvatar = document.createElement('div');
+                  newAvatar.className = 'avatar assistant-avatar';
+                  if (assistantSettings.avatar) {
+                    const img = document.createElement('img'); img.src = assistantSettings.avatar; img.alt = 'AI'; newAvatar.appendChild(img);
+                  } else newAvatar.textContent = 'AI';
+                  const newContent = document.createElement('div');
+                  newContent.className = 'message-content';
+                  const newMeta = document.createElement('div');
+                  newMeta.className = 'message-meta';
+                  newMeta.textContent = formatTime(Date.now());
+                  const newBubble = document.createElement('div');
+                  newBubble.className = 'bubble';
+                  applyStyleToBubble(newBubble, 'assistant');
+                  newContent.appendChild(newMeta);
+                  newContent.appendChild(newBubble);
+                  newRow.appendChild(newAvatar);
+                  newRow.appendChild(newContent);
+                  messagesContainer.appendChild(newRow);
+                  // 更新引用
+                  aiMessage = newAiMessage;
+                  aiBubble = newBubble;
+                  scrollToBottom();
+                }
+              }
+            } catch (err) {}
+          }
+        }
+
+                      // ========== 处理本轮所有 AI 消息中的记忆标记，并直接更新 DOM ==========
+        for (let i = startIndex; i < session.messages.length; i++) {
+          const msg = session.messages[i];
+          if (msg.role === 'assistant') {
+            const processed = processMemoryMarkers(msg.content);
+            if (processed.content !== msg.content) {
+              msg.content = processed.content;
+              // 找到对应的 DOM 行，更新气泡内容
+              const allAiRows = messagesContainer.querySelectorAll('.message-row.assistant');
+              for (const row of allAiRows) {
+                if (row.dataset.messageId === msg.id) {
+                  const bubble = row.querySelector('.bubble');
+                  if (bubble) bubble.textContent = msg.content;
+                  break;
+                }
+              }
+            }
+            // 如果处理后的内容为空，从 session 和 DOM 中移除该消息
+            if (msg.content.trim() === '') {
+              session.messages.splice(i, 1);
+              const allAiRows = messagesContainer.querySelectorAll('.message-row.assistant');
+              for (const row of allAiRows) {
+                if (row.dataset.messageId === msg.id) {
+                  row.remove();
+                  break;
+                }
+              }
+              i--; // 因为删除了一项，调整索引
+            }
+          }
+        }
+
+        saveData();
+
+              } catch (error) {
+        console.error('API调用错误:', error);
+        alert('AI回复失败：' + error.message);
+        session.messages = session.messages.filter(m => m !== aiMessage);
+        renderMessages();
+      } finally {
+        isStreaming = false;
+        sendBtn.disabled = false;
+        messageInput.disabled = false;
+        messageInput.focus();
+      }
+    }
+
+    function applyStyleToBubble(bubble, role) {
+      if (role === 'user') {
+        bubble.style.backgroundColor = themeSettings.userBubbleColor;
+      } else {
+        bubble.style.backgroundColor = themeSettings.assistantBubbleColor;
+      }
+      bubble.style.color = themeSettings.fontColor;
+      bubble.style.fontSize = themeSettings.bubbleSize + 'px';
+      bubble.style.borderRadius = themeSettings.bubbleRadius + 'px';
+      bubble.style.fontFamily = getCurrentFontFamily();
+    }
+ 
+       function processMemoryMarkers(text) {
+  const lines = text.split('\n');
+  const remainingLines = [];
+  for (const line of lines) {
+    let matched = false;
+    // 添加记忆标记：`【添加记忆：分类】内容`
+    const addMatch = line.match(/^【添加记忆：(.+?)】(.+)$/);
+    if (addMatch) {
+      const category = addMatch[1].trim();
+      const content = addMatch[2].trim();
+      if (category && content) {
+        memoryLibrary.push({
+          id: generateMemoryId(),
+          category: category,
+          content: content,
+          createdAt: Date.now()
+        });
+        matched = true;
+      }
+    }
+    // 删除记忆标记：`【删除记忆：内容片段】`
+    if (!matched) {
+      const delMatch = line.match(/^【删除记忆：(.+?)】$/);
+      if (delMatch) {
+        const fragment = delMatch[1].trim();
+        if (fragment) {
+          memoryLibrary = memoryLibrary.filter(m => !m.content.includes(fragment));
+          matched = true;
+        }
+      }
+    }
+    // 如果不是标记行，保留在回复中
+    if (!matched) {
+      remainingLines.push(line);
+    }
+  }
+  return { content: remainingLines.join('\n') };
+}
+
+    // ============ 助手设置页面逻辑 ============
+    function openAssistantPage() {
+      assistantPage.classList.add('visible'); closeSidebar();
+      assistantNameInput.value = assistantSettings.name || '';
+      assistantBackground.value = assistantSettings.background || '';
+      updateAvatarDisplay('assistant'); renderLikesList('assistant');
+      userNameInput.value = userSettings.name || '';
+      userBackground.value = userSettings.background || '';
+      updateAvatarDisplay('user'); renderLikesList('user');
+      checkBackgroundDirty('assistant'); checkBackgroundDirty('user');
+      renderSkillLists();
+    }
+    function closeAssistantPage() { assistantPage.classList.remove('visible'); }
+
+    function updateAvatarDisplay(type) {
+      if (type === 'assistant') {
+        if (assistantSettings.avatar) {
+          assistantAvatarImg.src = assistantSettings.avatar;
+          assistantAvatarImg.style.display = 'block'; assistantAvatarText.style.display = 'none';
+        } else {
+          assistantAvatarImg.style.display = 'none'; assistantAvatarText.style.display = 'inline';
+        }
+      } else {
+        if (userSettings.avatar) {
+          userAvatarImg.src = userSettings.avatar;
+          userAvatarImg.style.display = 'block'; userAvatarText.style.display = 'none';
+        } else {
+          userAvatarImg.style.display = 'none'; userAvatarText.style.display = 'inline';
+        }
+      }
+    }
+
+    function renderLikesList(type) {
+      const container = type === 'assistant' ? assistantLikesList : userLikesList;
+      const likesArray = type === 'assistant' ? assistantSettings.likes : userSettings.likes;
+      container.innerHTML = '';
+      likesArray.forEach((like, index) => {
+        const item = document.createElement('div'); item.className = 'like-item';
+        const span = document.createElement('span'); span.className = 'like-text'; span.textContent = like;
+        const delBtn = document.createElement('button'); delBtn.className = 'delete-like-btn'; delBtn.textContent = '删除';
+        delBtn.addEventListener('click', () => { likesArray.splice(index,1); renderLikesList(type); saveData(); });
+        item.appendChild(span); item.appendChild(delBtn); container.appendChild(item);
+      });
+    }
+
+    function checkBackgroundDirty(type) {
+      const textarea = type === 'assistant' ? assistantBackground : userBackground;
+      const saved = type === 'assistant' ? assistantSettings.background : userSettings.background;
+      const btn = type === 'assistant' ? saveAssistantBackgroundBtn : saveUserBackgroundBtn;
+      if (textarea.value !== saved) btn.classList.add('visible'); else btn.classList.remove('visible');
+    }
+
+    assistantBackground.addEventListener('input', () => checkBackgroundDirty('assistant'));
+    userBackground.addEventListener('input', () => checkBackgroundDirty('user'));
+    saveAssistantBackgroundBtn.addEventListener('click', () => {
+      assistantSettings.background = assistantBackground.value; saveData(); checkBackgroundDirty('assistant'); alert('AI身份背景已保存');
+    });
+    saveUserBackgroundBtn.addEventListener('click', () => {
+      userSettings.background = userBackground.value; saveData(); checkBackgroundDirty('user'); alert('你的身份背景已保存');
+    });
+
+    assistantSettingsMenu.addEventListener('click', openAssistantPage);
+    backBtn.addEventListener('click', closeAssistantPage);
+
+    assistantNameInput.addEventListener('input', () => { assistantSettings.name = assistantNameInput.value.trim() || 'AI助手'; saveData(); });
+    userNameInput.addEventListener('input', () => { userSettings.name = userNameInput.value.trim(); saveData(); });
+
+    assistantAvatarUploader.addEventListener('click', () => assistantAvatarFileInput.click());
+    assistantAvatarFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => { assistantSettings.avatar = ev.target.result; saveData(); updateAvatarDisplay('assistant'); renderMessages(); };
+      reader.readAsDataURL(file);
+    });
+    userAvatarUploader.addEventListener('click', () => userAvatarFileInput.click());
+    userAvatarFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => { userSettings.avatar = ev.target.result; saveData(); updateAvatarDisplay('user'); renderMessages(); };
+      reader.readAsDataURL(file);
+    });
+
+    function addLike(type) {
+      const input = type === 'assistant' ? assistantNewLikeInput : userNewLikeInput;
+      const likesArray = type === 'assistant' ? assistantSettings.likes : userSettings.likes;
+      const text = input.value.trim(); if (!text) return;
+      likesArray.push(text); input.value = ''; renderLikesList(type); saveData();
+    }
+    assistantAddLikeBtn.addEventListener('click', () => addLike('assistant'));
+    userAddLikeBtn.addEventListener('click', () => addLike('user'));
+    assistantNewLikeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addLike('assistant'); } });
+    userNewLikeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addLike('user'); } });
+
+    // ============ 技能列表逻辑 ============
+    function renderSkillLists() {
+      renderWorldbookList();
+      renderPromptList();
+    }
+
+    function renderWorldbookList() {
+      worldbookList.innerHTML = '';
+      assistantSettings.skillWorldbook.forEach((item, index) => {
+        const div = document.createElement('div');
+        div.className = 'skill-item';
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'skill-name';
+        nameSpan.textContent = item.name;
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'skill-actions';
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'edit-btn';
+        editBtn.textContent = '✏️';
+        editBtn.addEventListener('click', () => openSkillModal('worldbook', item.id));
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'delete-btn';
+        deleteBtn.textContent = '🗑️';
+        deleteBtn.addEventListener('click', () => {
+          assistantSettings.skillWorldbook.splice(index, 1);
+          renderWorldbookList();
+          saveData();
+        });
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'toggle-btn' + (item.enabled ? ' enabled' : '');
+        toggleBtn.addEventListener('click', () => {
+          item.enabled = !item.enabled;
+          renderWorldbookList();
+          saveData();
+        });
+
+        actionsDiv.appendChild(editBtn);
+        actionsDiv.appendChild(deleteBtn);
+        actionsDiv.appendChild(toggleBtn);
+        div.appendChild(nameSpan);
+        div.appendChild(actionsDiv);
+        worldbookList.appendChild(div);
+      });
+    }
+
+    function renderPromptList() {
+      promptList.innerHTML = '';
+      assistantSettings.skillPrompts.forEach((item, index) => {
+        const div = document.createElement('div');
+        div.className = 'skill-item';
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'skill-name';
+        nameSpan.textContent = item.name;
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'skill-actions';
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'edit-btn';
+        editBtn.textContent = '✏️';
+        editBtn.addEventListener('click', () => openSkillModal('prompt', item.id));
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'delete-btn';
+        deleteBtn.textContent = '🗑️';
+        deleteBtn.addEventListener('click', () => {
+          assistantSettings.skillPrompts.splice(index, 1);
+          renderPromptList();
+          saveData();
+        });
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'toggle-btn' + (item.enabled ? ' enabled' : '');
+        toggleBtn.addEventListener('click', () => {
+          item.enabled = !item.enabled;
+          renderPromptList();
+          saveData();
+        });
+
+        actionsDiv.appendChild(editBtn);
+        actionsDiv.appendChild(deleteBtn);
+        actionsDiv.appendChild(toggleBtn);
+        div.appendChild(nameSpan);
+        div.appendChild(actionsDiv);
+        promptList.appendChild(div);
+      });
+    }
+
+    function openSkillModal(type, id = null) {
+      editingSkillType = type;
+      editingSkillId = id;
+      skillModalOverlay.classList.add('visible');
+      const isWorldbook = (type === 'worldbook');
+      depthContainer.style.display = isWorldbook ? 'block' : 'none';
+      skillModalTitle.textContent = id ? '编辑技能' : '添加技能';
+      skillDeleteBtn.style.visibility = id ? 'visible' : 'hidden';
+
+      if (id) {
+        const list = isWorldbook ? assistantSettings.skillWorldbook : assistantSettings.skillPrompts;
+        const item = list.find(i => i.id === id);
+        if (item) {
+          skillNameInput.value = item.name;
+          skillContentInput.value = item.content;
+          if (isWorldbook) skillDepthInput.value = item.depth || 0;
+        }
+      } else {
+        skillNameInput.value = '';
+        skillContentInput.value = '';
+        if (isWorldbook) skillDepthInput.value = '';
+      }
+    }
+
+    function closeSkillModal() {
+      skillModalOverlay.classList.remove('visible');
+      editingSkillType = null;
+      editingSkillId = null;
+    }
+
+    skillCancelBtn.addEventListener('click', closeSkillModal);
+
+    skillSaveBtn.addEventListener('click', () => {
+      const type = editingSkillType;
+      const id = editingSkillId;
+      if (!type) return;
+      const name = skillNameInput.value.trim();
+      const content = skillContentInput.value.trim();
+      if (!name || !content) { alert('请填写名称和内容'); return; }
+
+      const list = (type === 'worldbook') ? assistantSettings.skillWorldbook : assistantSettings.skillPrompts;
+      if (id) {
+        const item = list.find(i => i.id === id);
+        if (item) {
+          item.name = name;
+          item.content = content;
+          if (type === 'worldbook') item.depth = parseInt(skillDepthInput.value) || 0;
+        }
+      } else {
+        const newItem = { id: generateMessageId(), name, content, enabled: false };
+        if (type === 'worldbook') newItem.depth = parseInt(skillDepthInput.value) || 0;
+        list.push(newItem);
+      }
+      saveData();
+      renderSkillLists();
+      closeSkillModal();
+    });
+
+    skillDeleteBtn.addEventListener('click', () => {
+      const type = editingSkillType;
+      const id = editingSkillId;
+      if (!type || !id) return;
+      const list = (type === 'worldbook') ? assistantSettings.skillWorldbook : assistantSettings.skillPrompts;
+      const index = list.findIndex(i => i.id === id);
+      if (index !== -1) {
+        list.splice(index, 1);
+        saveData();
+        renderSkillLists();
+        closeSkillModal();
+      }
+    });
+
+    addWorldbookBtn.addEventListener('click', () => openSkillModal('worldbook'));
+    addPromptBtn.addEventListener('click', () => openSkillModal('prompt'));
+
+    // ============ API设置页面逻辑 ============
+    function openApiPage() {
+      apiPage.classList.add('visible'); closeSidebar();
+      chatApiAddress.value = apiSettings.chat.address || '';
+      chatApiKey.value = apiSettings.chat.key || '';
+      chatModelInput.value = apiSettings.chat.model || '';
+      checkApiDirty('chat'); renderSchemeList('chat'); updateFetchButtonVisibility('chat');
+      voiceApiAddress.value = apiSettings.voice.address || '';
+      voiceApiKey.value = apiSettings.voice.key || '';
+      voiceModelInput.value = apiSettings.voice.model || '';
+      checkApiDirty('voice'); renderSchemeList('voice'); updateFetchButtonVisibility('voice');
+      resetApiTest('chat'); resetApiTest('voice');
+      chatModelList.classList.remove('visible'); voiceModelList.classList.remove('visible');
+    }
+    function closeApiPage() { apiPage.classList.remove('visible'); }
+
+    function checkApiDirty(type) {
+      const addrInput = type === 'chat' ? chatApiAddress : voiceApiAddress;
+      const keyInput = type === 'chat' ? chatApiKey : voiceApiKey;
+      const savedAddr = type === 'chat' ? apiSettings.chat.address : apiSettings.voice.address;
+      const savedKey = type === 'chat' ? apiSettings.chat.key : apiSettings.voice.key;
+      const btn = type === 'chat' ? saveChatApiBtn : saveVoiceApiBtn;
+      if (addrInput.value !== savedAddr || keyInput.value !== savedKey) btn.classList.add('visible'); else btn.classList.remove('visible');
+    }
+    chatApiAddress.addEventListener('input', () => checkApiDirty('chat'));
+    chatApiKey.addEventListener('input', () => checkApiDirty('chat'));
+    voiceApiAddress.addEventListener('input', () => checkApiDirty('voice'));
+    voiceApiKey.addEventListener('input', () => checkApiDirty('voice'));
+
+    function resetApiTest(type) {
+      const bar = type === 'chat' ? chatApiTestBar : voiceApiTestBar;
+      const msg = type === 'chat' ? chatApiTestMsg : voiceApiTestMsg;
+      bar.className = 'progress-bar'; msg.textContent = '';
+    }
+
+    function updateFetchButtonVisibility(type) {
+      const address = type === 'chat' ? apiSettings.chat.address : apiSettings.voice.address;
+      const key = type === 'chat' ? apiSettings.chat.key : apiSettings.voice.key;
+      const btn = type === 'chat' ? chatFetchModelsBtn : voiceFetchModelsBtn;
+      btn.style.display = (address && key) ? 'inline-block' : 'none';
+    }
+
+    async function testApiConnection(type) {
+      const address = type === 'chat' ? chatApiAddress.value.trim() : voiceApiAddress.value.trim();
+      const key = type === 'chat' ? chatApiKey.value.trim() : voiceApiKey.value.trim();
+      const bar = type === 'chat' ? chatApiTestBar : voiceApiTestBar;
+      const msg = type === 'chat' ? chatApiTestMsg : voiceApiTestMsg;
+      bar.className = 'progress-bar'; msg.textContent = '正在测试...';
+      if (!address || !key) { bar.className = 'progress-bar red'; msg.textContent = '地址或密钥为空，无法测试'; return false; }
+      let testUrl = address.replace(/\/?$/, '') + '/models';
+      try {
+        const resp = await fetch(testUrl, { method: 'GET', headers: { 'Authorization': 'Bearer ' + key } });
+        if (resp.ok) { bar.className = 'progress-bar green'; msg.textContent = '连接成功'; return true; }
+        else { bar.className = 'progress-bar red'; msg.textContent = '连接失败：HTTP ' + resp.status; return false; }
+      } catch (err) {
+        bar.className = 'progress-bar red'; msg.textContent = '连接出错：' + err.message; return false;
+      }
+    }
+
+    async function fetchModels(type) {
+      const addrInput = type === 'chat' ? chatApiAddress : voiceApiAddress;
+      const keyInput = type === 'chat' ? chatApiKey : voiceApiKey;
+      const modelList = type === 'chat' ? chatModelList : voiceModelList;
+      const modelInput = type === 'chat' ? chatModelInput : voiceModelInput;
+      const msg = type === 'chat' ? chatApiTestMsg : voiceApiTestMsg;
+      modelList.innerHTML = ''; modelList.classList.remove('visible');
+      const address = addrInput.value.trim(); const key = keyInput.value.trim();
+      if (!address || !key) { msg.textContent = '请先保存地址和密钥'; return; }
+      let modelsUrl = address.replace(/\/?$/, '') + '/models';
+      msg.textContent = '正在拉取模型列表...';
+      try {
+        const resp = await fetch(modelsUrl, { headers: { 'Authorization': 'Bearer ' + key } });
+        if (!resp.ok) { msg.textContent = '拉取失败：HTTP ' + resp.status; return; }
+        const data = await resp.json();
+        let models = [];
+        if (data.data && Array.isArray(data.data)) models = data.data.map(m => m.id);
+        else if (Array.isArray(data)) models = data;
+        else if (data.models) models = data.models.map(m => m.id);
+        if (models.length === 0) { msg.textContent = '未找到模型，请手动输入'; return; }
+        models.forEach(modelId => {
+          const item = document.createElement('div'); item.className = 'model-list-item'; item.textContent = modelId;
+          item.addEventListener('click', () => {
+            modelInput.value = modelId;
+            if (type === 'chat') apiSettings.chat.model = modelId; else apiSettings.voice.model = modelId;
+            saveData(); modelList.classList.remove('visible');
+            openSchemeModal(type);
+          });
+          modelList.appendChild(item);
+        });
+        modelList.classList.add('visible'); msg.textContent = '已获取模型，请点击选择';
+      } catch (err) {
+        msg.textContent = '拉取错误：' + err.message;
+      }
+    }
+
+    function saveApiConfig(type) {
+      const address = type === 'chat' ? chatApiAddress.value.trim() : voiceApiAddress.value.trim();
+      const key = type === 'chat' ? chatApiKey.value.trim() : voiceApiKey.value.trim();
+      if (!address || !key) { alert('请填写完整的地址和密钥'); return; }
+      if (type === 'chat') { apiSettings.chat.address = address; apiSettings.chat.key = key; }
+      else { apiSettings.voice.address = address; apiSettings.voice.key = key; }
+      saveData(); checkApiDirty(type); updateFetchButtonVisibility(type);
+      testApiConnection(type);
+    }
+    saveChatApiBtn.addEventListener('click', () => saveApiConfig('chat'));
+    saveVoiceApiBtn.addEventListener('click', () => saveApiConfig('voice'));
+    chatFetchModelsBtn.addEventListener('click', () => fetchModels('chat'));
+    voiceFetchModelsBtn.addEventListener('click', () => fetchModels('voice'));
+
+    function handleModelInputBlur(type) {
+      const input = type === 'chat' ? chatModelInput : voiceModelInput;
+      const model = input.value.trim(); if (!model) return;
+      const address = type === 'chat' ? apiSettings.chat.address : apiSettings.voice.address;
+      const key = type === 'chat' ? apiSettings.chat.key : apiSettings.voice.key;
+      if (address && key) {
+        if (type === 'chat') apiSettings.chat.model = model; else apiSettings.voice.model = model;
+        saveData();
+        openSchemeModal(type);
+      }
+    }
+    chatModelInput.addEventListener('blur', () => handleModelInputBlur('chat'));
+    voiceModelInput.addEventListener('blur', () => handleModelInputBlur('voice'));
+
+    // ============ 方案保存弹窗 ============
+    function openSchemeModal(type) {
+      pendingScheme = type; schemeNameInput.value = ''; modalOverlay.classList.add('visible'); schemeNameInput.focus();
+    }
+    function closeModal() { modalOverlay.classList.remove('visible'); pendingScheme = null; }
+    modalCancelBtn.addEventListener('click', closeModal);
+    modalConfirmBtn.addEventListener('click', () => {
+      if (!pendingScheme) return;
+      const type = pendingScheme;
+      let name = schemeNameInput.value.trim();
+      if (!name) { const list = type === 'chat' ? apiSettings.chatSchemes : apiSettings.voiceSchemes; name = '方案' + (list.length + 1); }
+      const address = type === 'chat' ? apiSettings.chat.address : apiSettings.voice.address;
+      const key = type === 'chat' ? apiSettings.chat.key : apiSettings.voice.key;
+      const model = type === 'chat' ? apiSettings.chat.model : apiSettings.voice.model;
+      const scheme = { name, address, key, model };
+      if (type === 'chat') apiSettings.chatSchemes.push(scheme); else apiSettings.voiceSchemes.push(scheme);
+      saveData(); renderSchemeList(type); closeModal();
+    });
+
+    function renderSchemeList(type) {
+      const container = type === 'chat' ? chatSchemeList : voiceSchemeList;
+      const schemes = type === 'chat' ? apiSettings.chatSchemes : apiSettings.voiceSchemes;
+      container.innerHTML = '';
+      schemes.forEach((scheme, index) => {
+        const item = document.createElement('div'); item.className = 'scheme-item'; item.title = '点击加载此方案';
+        const span = document.createElement('span'); span.className = 'scheme-name'; span.textContent = scheme.name;
+        const delBtn = document.createElement('button'); delBtn.className = 'delete-scheme-btn'; delBtn.textContent = '删除';
+        delBtn.addEventListener('click', (e) => { e.stopPropagation(); schemes.splice(index,1); saveData(); renderSchemeList(type); });
+        item.appendChild(span); item.appendChild(delBtn);
+        item.addEventListener('click', () => {
+          if (type === 'chat') {
+            chatApiAddress.value = scheme.address; chatApiKey.value = scheme.key; chatModelInput.value = scheme.model || '';
+            apiSettings.chat.address = scheme.address; apiSettings.chat.key = scheme.key; apiSettings.chat.model = scheme.model || '';
+            checkApiDirty('chat'); updateFetchButtonVisibility('chat');
+          } else {
+            voiceApiAddress.value = scheme.address; voiceApiKey.value = scheme.key; voiceModelInput.value = scheme.model || '';
+            apiSettings.voice.address = scheme.address; apiSettings.voice.key = scheme.key; apiSettings.voice.model = scheme.model || '';
+            checkApiDirty('voice'); updateFetchButtonVisibility('voice');
+          }
+          saveData();
+        });
+        container.appendChild(item);
+      });
+    }
+
+    apiSettingsMenu.addEventListener('click', openApiPage);
+    apiBackBtn.addEventListener('click', closeApiPage);
+
+    // ============ 外观主题页面逻辑 ============
+    themeSettingsMenu.addEventListener('click', () => {
+      themePage.classList.add('visible');
+      closeSidebar();
+      applyThemeToChat();
+    });
+    themeBackBtn.addEventListener('click', () => themePage.classList.remove('visible'));
+
+    uploadWallpaperBtn.addEventListener('click', () => wallpaperFileInput.click());
+    wallpaperFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        themeSettings.wallpaperImage = ev.target.result;
+        saveData();
+        applyThemeToChat();
+        saveWallpaperBtn.classList.add('visible');
+      };
+      reader.readAsDataURL(file);
+    });
+
+    blurSlider.addEventListener('input', () => saveWallpaperBtn.classList.add('visible'));
+    opacitySlider.addEventListener('input', () => saveWallpaperBtn.classList.add('visible'));
+    saveWallpaperBtn.addEventListener('click', () => {
+      themeSettings.wallpaperBlur = parseFloat(blurSlider.value);
+      themeSettings.wallpaperOpacity = parseFloat(opacitySlider.value);
+      saveData();
+      applyThemeToChat();
+      saveWallpaperBtn.classList.remove('visible');
+    });
+
+    uploadFontBtn.addEventListener('click', () => fontFileInput.click());
+    fontFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        pendingFontData = ev.target.result;
+        saveFontBtn.style.display = 'inline-block';
+      };
+      reader.readAsDataURL(file);
+    });
+    saveFontBtn.addEventListener('click', () => {
+      if (!pendingFontData) { alert('请先上传字体文件'); return; }
+      openFontModal();
+    });
+
+    function openFontModal() {
+      fontNameInput.value = '';
+      fontModalOverlay.classList.add('visible');
+      fontNameInput.focus();
+    }
+    function closeFontModal() { fontModalOverlay.classList.remove('visible'); }
+    fontModalCancelBtn.addEventListener('click', closeFontModal);
+    fontModalConfirmBtn.addEventListener('click', () => {
+      let name = fontNameInput.value.trim();
+      if (!name) name = '字体' + (themeSettings.fonts.length + 1);
+      themeSettings.fonts.push({ name, data: pendingFontData });
+      pendingFontData = null;
+      saveFontBtn.style.display = 'none';
+      renderFontList();
+      saveData();
+      closeFontModal();
+    });
+
+    function renderFontList() {
+      fontList.innerHTML = '';
+      themeSettings.fonts.forEach((font, index) => {
+        const item = document.createElement('div');
+        item.className = 'font-item';
+        item.title = font.name === '默认字体' ? '默认字体不可删除' : '点击应用此字体';
+        const span = document.createElement('span');
+        span.className = 'font-name';
+        span.textContent = font.name;
+        const delBtn = document.createElement('button');
+        delBtn.className = 'delete-font-btn';
+        delBtn.textContent = '删除';
+        if (font.name === '默认字体') delBtn.style.display = 'none';
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (font.name === '默认字体') return;
+          themeSettings.fonts.splice(index, 1);
+          if (themeSettings.currentFontName === font.name) {
+            themeSettings.currentFontName = '默认字体';
+            document.documentElement.style.fontFamily = '';
+          }
+          renderFontList();
+          saveData();
+        });
+        item.appendChild(span);
+        item.appendChild(delBtn);
+        item.addEventListener('click', () => {
+          themeSettings.currentFontName = font.name;
+          if (font.name === '默认字体') {
+            document.documentElement.style.fontFamily = '';
+          } else {
+            const style = document.createElement('style');
+            style.textContent = `@font-face { font-family: "${font.name}"; src: url(${font.data}); }`;
+            document.head.appendChild(style);
+            document.documentElement.style.fontFamily = '"' + font.name + '"';
+          }
+          saveData();
+          applyThemeToChat();
+        });
+        fontList.appendChild(item);
+      });
+    }
+
+    fontColorBtn.addEventListener('click', () => fontColorInput.click());
+    fontColorInput.addEventListener('input', () => {
+      themeSettings.fontColor = fontColorInput.value;
+      fontColorValue.textContent = themeSettings.fontColor;
+      saveData();
+      applyThemeToChat();
+    });
+
+    userBubbleColorBtn.addEventListener('click', () => userBubbleColorInput.click());
+    userBubbleColorInput.addEventListener('input', () => {
+      themeSettings.userBubbleColor = userBubbleColorInput.value;
+      saveData();
+      applyThemeToChat();
+    });
+    assistantBubbleColorBtn.addEventListener('click', () => assistantBubbleColorInput.click());
+    assistantBubbleColorInput.addEventListener('input', () => {
+      themeSettings.assistantBubbleColor = assistantBubbleColorInput.value;
+      saveData();
+      applyThemeToChat();
+    });
+
+    bubbleSizeSlider.addEventListener('input', () => saveBubbleBtn.classList.add('visible'));
+    bubbleRadiusSlider.addEventListener('input', () => saveBubbleBtn.classList.add('visible'));
+    saveBubbleBtn.addEventListener('click', () => {
+      themeSettings.bubbleSize = parseFloat(bubbleSizeSlider.value);
+      themeSettings.bubbleRadius = parseFloat(bubbleRadiusSlider.value);
+      saveData();
+      applyThemeToChat();
+      saveBubbleBtn.classList.remove('visible');
+    });
+
+    // ============ 记忆库逻辑 ============
+   function generateMemoryId() {
+   return Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+ }
+
+   function openMemoryPage() {
+   memoryPage.classList.add('visible');
+   closeSidebar();
+   renderMemoryList();
+ 
+ }
+
+
+   function closeMemoryPage() {
+   memoryPage.classList.remove('visible');
+ }
+
+   function renderMemoryList() {
+   memoryList.innerHTML = '';
+  // 按创建时间倒序排列
+  const sortedMemories = [...memoryLibrary].sort((a, b) => b.createdAt - a.createdAt);
+  sortedMemories.forEach(memory => {
+    const item = document.createElement('div');
+    item.className = 'memory-item';
+    const infoSpan = document.createElement('span');
+    infoSpan.className = 'memory-info';
+    infoSpan.textContent = `[${memory.category}] ${memory.content}`;
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'memory-actions';
+    const editBtn = document.createElement('button');
+    editBtn.className = 'edit-memory-btn';
+    editBtn.textContent = '✏️';
+    editBtn.addEventListener('click', () => openMemoryModal(memory.id));
+    const delBtn = document.createElement('button');
+    delBtn.className = 'delete-memory-btn';
+    delBtn.textContent = '🗑️';
+    delBtn.addEventListener('click', () => {
+      memoryLibrary = memoryLibrary.filter(m => m.id !== memory.id);
+      renderMemoryList();
+      saveData();
+    });
+    actionsDiv.appendChild(editBtn);
+    actionsDiv.appendChild(delBtn);
+    item.appendChild(infoSpan);
+    item.appendChild(actionsDiv);
+    memoryList.appendChild(item);
+  });
+}
+
+function openMemoryModal(id = null) {
+  memoryModalOverlay.classList.add('visible');
+  memoryModalTitle.textContent = id ? '编辑记忆' : '添加记忆';
+  memoryDeleteBtn.style.visibility = id ? 'visible' : 'hidden';
+  if (id) {
+    const memory = memoryLibrary.find(m => m.id === id);
+    if (memory) {
+      memoryCategoryInput.value = memory.category;
+      memoryContentInput.value = memory.content;
+      memoryDeleteBtn.dataset.memoryId = memory.id;
+    }
+  } else {
+    memoryCategoryInput.value = '';
+    memoryContentInput.value = '';
+    memoryDeleteBtn.dataset.memoryId = '';
+  }
+}
+
+function closeMemoryModal() {
+  memoryModalOverlay.classList.remove('visible');
+}
+
+memorySaveBtn.addEventListener('click', () => {
+  const category = memoryCategoryInput.value.trim();
+  const content = memoryContentInput.value.trim();
+  if (!category || !content) { alert('请填写分类和内容'); return; }
+  const editingId = memoryDeleteBtn.dataset.memoryId;
+  if (editingId) {
+    const memory = memoryLibrary.find(m => m.id === editingId);
+    if (memory) {
+      memory.category = category;
+      memory.content = content;
+    }
+  } else {
+    memoryLibrary.push({
+      id: generateMemoryId(),
+      category,
+      content,
+      createdAt: Date.now()
+    });
+  }
+  saveData();
+  renderMemoryList();
+  closeMemoryModal();
+});
+
+memoryCancelBtn.addEventListener('click', closeMemoryModal);
+memoryDeleteBtn.addEventListener('click', () => {
+  const editingId = memoryDeleteBtn.dataset.memoryId;
+  if (editingId) {
+    memoryLibrary = memoryLibrary.filter(m => m.id !== editingId);
+    saveData();
+    renderMemoryList();
+    closeMemoryModal();
+  }
+});
+
+addMemoryBtn.addEventListener('click', () => openMemoryModal());
+memoryBackBtn.addEventListener('click', closeMemoryPage);
+memoryMenu.addEventListener('click', openMemoryPage);
+
+// 导出记忆
+exportMemoryBtn.addEventListener('click', () => {
+  const dataStr = JSON.stringify(memoryLibrary, null, 2);
+  const blob = new Blob([dataStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'memory-library.json';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// 导入记忆
+importMemoryBtn.addEventListener('click', () => importMemoryFileInput.click());
+importMemoryFileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const imported = JSON.parse(ev.target.result);
+      if (Array.isArray(imported)) {
+        memoryLibrary = memoryLibrary.concat(imported);
+        // 去重？简单合并
+        saveData();
+        renderMemoryList();
+        alert('导入成功');
+      } else {
+        alert('文件格式不正确');
+      }
+    } catch (err) {
+      alert('导入失败：' + err.message);
+    }
+  };
+  reader.readAsText(file);
+});
+
+    // ============ 初始化 ============
+    function init() {
+      loadData();
+      renderMessages();
+      renderHistoryList();
+      applyThemeToChat();
+      renderSkillLists();
+      messageInput.focus();
+    }
+
+    init();
+  </script>
+</body>
+</html>
