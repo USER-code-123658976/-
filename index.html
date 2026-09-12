@@ -255,12 +255,59 @@
     .message-context-menu .menu-item-btn:hover { background: #f0f0f0; }
     .message-context-menu .danger { color: #f00; }
 
+         /* ============ 移动端专属适配 ============ */
     @media (max-width: 600px) {
-      .api-content, .theme-content, .assistant-content { padding-top: 15px; gap: 20px; }
+      /* 1. 解决手机键盘弹起时页面乱跑的问题 */
+      html, body { height: 100%; }
+      body { height: 100dvh; }
+      .app { height: 100dvh; }
+      .chat-area { height: 100dvh; }
+      .sidebar { width: 240px; } /* 手机侧边栏稍微变窄一点 */
+      
+      /* 2. 顶部标题栏缩小，防止挤爆 */
+      .chat-header { padding: 10px 12px; }
+      .chat-title { font-size: 18px; margin-left: 8px; letter-spacing: 1px; }
+      .new-chat-btn { font-size: 16px; padding: 6px 8px; }
+      
+      /* 3. 聊天气泡更宽，文字稍小 */
+      .message-content { max-width: 82%; }
+      .bubble { padding: 10px 12px; font-size: 14px; border-radius: 14px; }
+      .messages { padding: 16px 12px 80px 12px; gap: 16px; }
+      .avatar { width: 34px; height: 34px; font-size: 14px; }
+      
+      /* 4. 底部输入框适配，防止被键盘挡住 */
+      .input-area { padding: 10px 12px; gap: 6px; }
+      .input-area input { padding: 10px 12px; font-size: 14px; }
+      .input-area button[type="button"] { padding: 10px 14px; font-size: 14px; }
+      .plus-btn { font-size: 20px; padding: 0 4px; }
+      
+      /* 5. 修复设置页面、API页面、外观页面的边距 */
+      .assistant-content, .api-content, .theme-content, .memory-content {
+        padding: 15px 10px 0 10px;
+        gap: 15px;
+        max-width: 100%;
+      }
       .avatar-uploader { width: 80px; height: 80px; font-size: 24px; }
-      .modal-box { width: 85%; }
+      .field-group textarea { height: 80px; }
+      .name-input { font-size: 18px; }
+      
+      /* 6. 弹窗适配（防止弹窗超出屏幕） */
+      .modal-box { width: 90%; padding: 18px; }
+      .modal-box h3 { font-size: 16px; }
+      .modal-box input, .modal-box textarea { font-size: 13px; }
+      .modal-box .modal-btns button { padding: 6px 12px; font-size: 13px; }
+      
+      /* 7. 设置页面标题字体缩小 */
+      .section-title { font-size: 16px; }
+      .theme-section .section-title { font-size: 17px; }
+      .api-section .section-title { font-size: 17px; }
+      
+      /* 8. 历史窗口列表适配 */
+      .history-panel { max-height: 150px; }
+      .history-list { max-height: 150px; }
+      .history-item { padding: 8px 10px; font-size: 13px; }
     }
-  </style>
+      </style>
 </head>
 <body>
   <div class="app">
@@ -1595,18 +1642,26 @@
     userNameInput.addEventListener('input', () => { userSettings.name = userNameInput.value.trim(); saveData(); });
 
     assistantAvatarUploader.addEventListener('click', () => assistantAvatarFileInput.click());
-    assistantAvatarFileInput.addEventListener('change', (e) => {
+    assistantAvatarFileInput.addEventListener('change', async (e) => {
       const file = e.target.files[0]; if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => { assistantSettings.avatar = ev.target.result; saveData(); updateAvatarDisplay('assistant'); renderMessages(); };
-      reader.readAsDataURL(file);
+      const url = await uploadImageToSupabase(file);
+      if (url) {
+        assistantSettings.avatar = url;
+        saveData();
+        updateAvatarDisplay('assistant');
+        renderMessages();
+      }
     });
     userAvatarUploader.addEventListener('click', () => userAvatarFileInput.click());
-    userAvatarFileInput.addEventListener('change', (e) => {
+    userAvatarFileInput.addEventListener('change', async (e) => {
       const file = e.target.files[0]; if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => { userSettings.avatar = ev.target.result; saveData(); updateAvatarDisplay('user'); renderMessages(); };
-      reader.readAsDataURL(file);
+      const url = await uploadImageToSupabase(file);
+      if (url) {
+        userSettings.avatar = url;
+        saveData();
+        updateAvatarDisplay('user');
+        renderMessages();
+      }
     });
 
     function addLike(type) {
@@ -1965,17 +2020,17 @@
     themeBackBtn.addEventListener('click', () => themePage.classList.remove('visible'));
 
     uploadWallpaperBtn.addEventListener('click', () => wallpaperFileInput.click());
-    wallpaperFileInput.addEventListener('change', (e) => {
+    wallpaperFileInput.addEventListener('change', async (e) => {
       const file = e.target.files[0]; if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        themeSettings.wallpaperImage = ev.target.result;
+      const url = await uploadImageToSupabase(file);
+      if (url) {
+        themeSettings.wallpaperImage = url;
         saveData();
         applyThemeToChat();
         saveWallpaperBtn.classList.add('visible');
-      };
-      reader.readAsDataURL(file);
+      }
     });
+
 
     blurSlider.addEventListener('input', () => saveWallpaperBtn.classList.add('visible'));
     opacitySlider.addEventListener('input', () => saveWallpaperBtn.classList.add('visible'));
@@ -2093,6 +2148,35 @@
       applyThemeToChat();
       saveBubbleBtn.classList.remove('visible');
     });
+     
+     // ============ 图片上传到 Supabase Storage ============
+    async function uploadImageToSupabase(file) {
+      try {
+        // 生成一个不重复的文件名，用时间戳加上原始文件名
+        const fileName = Date.now() + '_' + file.name;
+        
+        // 上传文件到 'images' 存储桶
+        const { data, error } = await supabaseClient
+          .storage
+          .from('images')
+          .upload(fileName, file);
+
+        if (error) throw error;
+
+        // 获取上传后的公开链接
+        const { data: urlData } = supabaseClient
+          .storage
+          .from('images')
+          .getPublicUrl(fileName);
+
+        return urlData.publicUrl; // 返回链接字符串
+      } catch (err) {
+        console.error('图片上传失败:', err.message);
+        alert('图片上传失败：' + err.message);
+        return null;
+      }
+    }
+
 
     // ============ 记忆库逻辑 ============
    function generateMemoryId() {
